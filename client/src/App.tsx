@@ -1,9 +1,25 @@
 import { Switch, Route } from "wouter";
-import { Dashboard } from "@/pages/Dashboard";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { Dashboard } from "@/pages/Dashboard";
+import AuthPage from "@/pages/AuthPage";
+import { useUser } from "@/hooks/use-user";
 
 function App() {
+  const { user, isLoading } = useUser();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage />;
+  }
+
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
@@ -18,7 +34,7 @@ function NotFound() {
       <Card className="w-full max-w-md mx-4">
         <CardContent className="pt-6">
           <div className="flex mb-4 gap-2">
-            <AlertCircle className="h-8 w-8 text-red-500" />
+            <AlertCircle className="h-8 w-8 text-destructive" />
             <h1 className="text-2xl font-bold">404 Page Not Found</h1>
           </div>
 

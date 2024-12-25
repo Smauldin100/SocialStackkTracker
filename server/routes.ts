@@ -5,6 +5,7 @@ import OpenAI from "openai";
 import { db } from "@db";
 import { stocks, watchlists, socialAccounts, aiInsights } from "@db/schema";
 import { eq } from "drizzle-orm";
+import { setupAuth } from "./auth";
 
 // Configure OpenAI with the provided API key
 const openai = new OpenAI({
@@ -13,6 +14,9 @@ const openai = new OpenAI({
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
+
+  // Set up authentication routes
+  setupAuth(app);
 
   // WebSocket server for real-time stock updates
   const wss = new WebSocketServer({ 

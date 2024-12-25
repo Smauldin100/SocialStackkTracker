@@ -5,6 +5,7 @@ import { relations } from "drizzle-orm";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").unique().notNull(),
+  password: text("password").notNull(),
   email: text("email").unique().notNull(),
   preferences: jsonb("preferences").default({}).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -58,7 +59,11 @@ export const watchlistsRelations = relations(watchlists, ({ one, many }) => ({
 }));
 
 // Schemas
-export const insertUserSchema = createInsertSchema(users);
+export const insertUserSchema = createInsertSchema(users, {
+  id: undefined,
+  preferences: undefined,
+  createdAt: undefined,
+});
 export const selectUserSchema = createSelectSchema(users);
 
 export const insertWatchlistSchema = createInsertSchema(watchlists);
