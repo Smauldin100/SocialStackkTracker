@@ -46,7 +46,7 @@ export function setupAuth(app: Express) {
       sameSite: "lax",
     },
     store: new MemoryStore({
-      checkPeriod: 86400000,
+      checkPeriod: 86400000, // prune expired entries every 24h
     }),
   };
 

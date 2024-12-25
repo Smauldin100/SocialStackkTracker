@@ -12,6 +12,20 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Schema validation
+export const insertUserSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email("Invalid email format"),
+});
+
+export const selectUserSchema = createSelectSchema(users);
+
+// Type exports
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type SelectUser = typeof users.$inferSelect;
+
 export const watchlists = pgTable("watchlists", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
@@ -75,13 +89,6 @@ export const postsRelations = relations(posts, ({ one }) => ({
   }),
 }));
 
-export const insertUserSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  email: z.string().email("Invalid email format"),
-});
-export const selectUserSchema = createSelectSchema(users);
-
 export const insertWatchlistSchema = createInsertSchema(watchlists);
 export const selectWatchlistSchema = createSelectSchema(watchlists);
 
@@ -101,9 +108,6 @@ export const insertPostSchema = createInsertSchema(posts, {
   shares: undefined,
 });
 export const selectPostSchema = createSelectSchema(posts);
-
-export type User = typeof users.$inferSelect;
-export type NewUser = typeof users.$inferInsert;
 
 export type Watchlist = typeof watchlists.$inferSelect;
 export type NewWatchlist = typeof watchlists.$inferInsert;
