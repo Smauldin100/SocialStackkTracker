@@ -27,7 +27,14 @@ export default function AuthPage() {
 
   async function onSubmit(data: any) {
     try {
-      const result = await (isLogin ? login(data) : register(data));
+      const result = await (isLogin ? login({
+        username: data.username,
+        password: data.password
+      }) : register({
+        username: data.username,
+        password: data.password,
+        email: data.email
+      }));
 
       if (!result.ok) {
         toast({

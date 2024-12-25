@@ -95,6 +95,43 @@ export function useUser() {
     }
   });
 
+  import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { InsertUser, SelectUser } from '@db/schema';
+
+const queryClient = useQueryClient();
+
+export function useUser() {
+  const { data: user, isLoading, error } = useQuery<SelectUser | null>({
+    queryKey: ['user'],
+    queryFn: async () => {
+      console.log('Fetching user data...');
+      const response = await fetch('/api/user', {
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          console.log('User not authenticated');
+          return null;
+        }
+        throw new Error('Failed to fetch user');
+      }
+
+      return response.json();
+    }
+  });
+
+  const loginMutation = useMutation<RequestResult, Error, { username: string; password: string }>({
+    mutationFn: (credentials) => {
+      console.log('Attempting login...');
+      return handleRequest('/api/login', 'POST', credentials);
+    },
+    onSuccess: () => {
+      console.log('Login successful, invalidating user query');
+      queryClient.invalidateQueries({ queryKey: ['user'] });
+    }
+  });
+
   const logoutMutation = useMutation<RequestResult, Error>({
     mutationFn: () => {
       console.log('Attempting logout...');
@@ -103,9 +140,6 @@ export function useUser() {
     onSuccess: () => {
       console.log('Logout successful, invalidating user query');
       queryClient.invalidateQueries({ queryKey: ['user'] });
-    },
-    onError: (error) => {
-      console.error('Logout error:', error);
     }
   });
 
