@@ -180,15 +180,15 @@ export function registerRoutes(app: Express): Server {
       const { posts } = req.body;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o", // Using the latest model as specified
         messages: [
           {
             role: "system",
-            content: "Analyze social media posts and provide insights in JSON format with the following structure: { trending: string[], sentiment: number, suggestions: string[] }",
+            content: "Analyze social media posts and provide detailed sentiment analysis in JSON format with the following structure: { positive: number, neutral: number, negative: number, overallMood: number, trendingTopics: string[] }. The numbers should be between 0 and 1, representing the proportion of posts in each category. overallMood should be a number between 0 and 1 representing the overall sentiment.",
           },
           {
             role: "user",
-            content: `Analyze these social media posts: ${JSON.stringify(posts)}`,
+            content: `Analyze these social media posts for sentiment and topics: ${JSON.stringify(posts)}`,
           },
         ],
         response_format: { type: "json_object" },

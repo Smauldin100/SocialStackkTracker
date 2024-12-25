@@ -4,6 +4,7 @@ import { StockChart } from '@/components/StockChart';
 import { SocialFeed } from '@/components/SocialFeed';
 import { AIInsights } from '@/components/AIInsights';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { SentimentDashboard } from '@/components/SentimentDashboard';
 import { useUser } from '@/hooks/use-user';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,6 +24,20 @@ export function Dashboard() {
   const { data: socialPosts, isLoading: isLoadingSocial } = useQuery({
     queryKey: ['/api/social/feed'],
     queryFn: () => fetch('/api/social/feed').then(r => r.json()),
+  });
+
+  const { data: sentimentData, isLoading: isLoadingSentiment } = useQuery({
+    queryKey: ['/api/social/insights'],
+    queryFn: async () => {
+      if (!socialPosts) return null;
+      const response = await fetch('/api/social/insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ posts: socialPosts }),
+      });
+      return response.json();
+    },
+    enabled: !!socialPosts,
   });
 
   const { data: aiInsights, isLoading: isLoadingAI } = useQuery({
@@ -91,6 +106,17 @@ export function Dashboard() {
                 confidence: 0,
               }}
               isLoading={isLoadingAI}
+            />
+
+            <SentimentDashboard
+              data={sentimentData || {
+                positive: 0.33,
+                neutral: 0.34,
+                negative: 0.33,
+                overallMood: 0.5,
+                trendingTopics: [],
+              }}
+              isLoading={isLoadingSentiment}
             />
 
             <Card>
