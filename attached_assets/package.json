@@ -1,0 +1,10 @@
+{
+  "name": "api-infinete-social-replit",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "concurrently "cd backend && npm start" "cd frontend && npm start""
+  },
+  "dependencies": {
+    "concurrently": "^7.3.0"
+  }
+}
