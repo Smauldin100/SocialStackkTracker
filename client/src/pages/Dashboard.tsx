@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { StockChart } from '@/components/StockChart';
 import { SocialFeed } from '@/components/SocialFeed';
@@ -9,24 +9,41 @@ import { useUser } from '@/hooks/use-user';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, TrendingUp, Share2, Bell } from 'lucide-react';
+import { Sparkles, TrendingUp, Share2, Bell, Loader2 } from 'lucide-react';
 import { CreatePost } from '@/components/CreatePost';
+import { useToast } from '@/hooks/use-toast';
 
 export function Dashboard() {
   const [selectedStock, setSelectedStock] = useState('AAPL');
   const { user, logout } = useUser();
+  const { toast } = useToast();
 
-  const { data: stockData, isLoading: isLoadingStock } = useQuery({
+  // Stock data query
+  const { data: stockData, isLoading: isLoadingStock, error: stockError } = useQuery({
     queryKey: ['/api/stocks', selectedStock],
-    queryFn: () => fetch(`/api/stocks/${selectedStock}`).then(r => r.json()),
+    queryFn: async () => {
+      const response = await fetch(`/api/stocks/${selectedStock}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch stock data');
+      }
+      return response.json();
+    },
   });
 
-  const { data: socialPosts, isLoading: isLoadingSocial } = useQuery({
+  // Social posts query
+  const { data: socialPosts, isLoading: isLoadingSocial, error: socialError } = useQuery({
     queryKey: ['/api/social/feed'],
-    queryFn: () => fetch('/api/social/feed').then(r => r.json()),
+    queryFn: async () => {
+      const response = await fetch('/api/social/feed');
+      if (!response.ok) {
+        throw new Error('Failed to fetch social feed');
+      }
+      return response.json();
+    },
   });
 
-  const { data: sentimentData, isLoading: isLoadingSentiment } = useQuery({
+  // Sentiment data query with proper error handling
+  const { data: sentimentData, isLoading: isLoadingSentiment, error: sentimentError } = useQuery({
     queryKey: ['/api/social/insights'],
     queryFn: async () => {
       if (!socialPosts) return null;
@@ -35,19 +52,47 @@ export function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ posts: socialPosts }),
       });
+      if (!response.ok) {
+        throw new Error('Failed to analyze sentiment');
+      }
       return response.json();
     },
     enabled: !!socialPosts,
   });
 
-  const { data: aiInsights, isLoading: isLoadingAI } = useQuery({
+  // AI insights query
+  const { data: aiInsights, isLoading: isLoadingAI, error: aiError } = useQuery({
     queryKey: ['/api/ai/insights', selectedStock],
     queryFn: async () => {
       if (!stockData) return null;
-      return fetch(`/api/ai/insights/${selectedStock}`).then(r => r.json());
+      const response = await fetch(`/api/ai/insights/${selectedStock}`);
+      if (!response.ok) {
+        throw new Error('Failed to generate AI insights');
+      }
+      return response.json();
     },
     enabled: !!stockData,
   });
+
+  // Error handling effect
+  useEffect(() => {
+    const errors = [
+      { error: stockError, message: 'Failed to load stock data' },
+      { error: socialError, message: 'Failed to load social feed' },
+      { error: sentimentError, message: 'Failed to analyze sentiment' },
+      { error: aiError, message: 'Failed to generate AI insights' },
+    ];
+
+    errors.forEach(({ error, message }) => {
+      if (error) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: message,
+        });
+      }
+    });
+  }, [stockError, socialError, sentimentError, aiError, toast]);
 
   const plannedFeatures = [
     {
@@ -76,15 +121,38 @@ export function Dashboard() {
     }
   ];
 
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
+      <header className="border-b border-border backdrop-blur-sm bg-background/80 sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-primary">Financial Dashboard</h1>
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/50 bg-clip-text text-transparent">
+            Financial Dashboard
+          </h1>
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground">Welcome, {user?.username}</span>
             <ThemeToggle />
-            <Button variant="outline" onClick={() => logout()}>Logout</Button>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                logout().catch(error => {
+                  toast({
+                    variant: 'destructive',
+                    title: 'Error',
+                    description: 'Failed to logout. Please try again.',
+                  });
+                });
+              }}
+            >
+              Logout
+            </Button>
           </div>
         </div>
       </header>
@@ -126,7 +194,10 @@ export function Dashboard() {
               <CardContent>
                 <div className="grid gap-4">
                   {plannedFeatures.map((feature, index) => (
-                    <div key={index} className="flex items-start gap-4 p-4 rounded-lg bg-card border border-border">
+                    <div 
+                      key={index} 
+                      className="flex items-start gap-4 p-4 rounded-lg bg-card/80 backdrop-blur-sm border border-border hover:border-primary/50 transition-colors"
+                    >
                       <feature.icon className="h-6 w-6 text-primary" />
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-2">
