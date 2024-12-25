@@ -14,6 +14,8 @@ async function handleRequest(
   body?: InsertUser
 ): Promise<RequestResult> {
   try {
+    console.log(`Making ${method} request to ${url}${body ? ' with body' : ''}`);
+
     const response = await fetch(url, {
       method,
       headers: body ? { "Content-Type": "application/json" } : undefined,
@@ -22,38 +24,51 @@ async function handleRequest(
     });
 
     if (!response.ok) {
+      console.error(`Request failed: ${response.status} ${response.statusText}`);
+
       if (response.status >= 500) {
         return { ok: false, message: response.statusText };
       }
 
       const message = await response.text();
+      console.error('Error message:', message);
       return { ok: false, message };
     }
 
+    console.log(`Request successful: ${response.status}`);
     return { ok: true };
   } catch (e: any) {
+    console.error('Request error:', e);
     return { ok: false, message: e.toString() };
   }
 }
 
 async function fetchUser(): Promise<SelectUser | null> {
+  console.log('Fetching user data...');
+
   const response = await fetch('/api/user', {
     credentials: 'include'
   });
 
   if (!response.ok) {
     if (response.status === 401) {
+      console.log('User not authenticated');
       return null;
     }
 
+    console.error(`User fetch failed: ${response.status} ${response.statusText}`);
     if (response.status >= 500) {
       throw new Error(`${response.status}: ${response.statusText}`);
     }
 
-    throw new Error(`${response.status}: ${await response.text()}`);
+    const errorText = await response.text();
+    console.error('Error details:', errorText);
+    throw new Error(`${response.status}: ${errorText}`);
   }
 
-  return response.json();
+  const userData = await response.json();
+  console.log('User data fetched successfully');
+  return userData;
 }
 
 export function useUser() {
@@ -67,24 +82,45 @@ export function useUser() {
   });
 
   const loginMutation = useMutation<RequestResult, Error, InsertUser>({
-    mutationFn: (userData) => handleRequest('/api/login', 'POST', userData),
+    mutationFn: (userData) => {
+      console.log('Attempting login...');
+      return handleRequest('/api/login', 'POST', userData);
+    },
     onSuccess: () => {
+      console.log('Login successful, invalidating user query');
       queryClient.invalidateQueries({ queryKey: ['user'] });
     },
+    onError: (error) => {
+      console.error('Login error:', error);
+    }
   });
 
   const logoutMutation = useMutation<RequestResult, Error>({
-    mutationFn: () => handleRequest('/api/logout', 'POST'),
+    mutationFn: () => {
+      console.log('Attempting logout...');
+      return handleRequest('/api/logout', 'POST');
+    },
     onSuccess: () => {
+      console.log('Logout successful, invalidating user query');
       queryClient.invalidateQueries({ queryKey: ['user'] });
     },
+    onError: (error) => {
+      console.error('Logout error:', error);
+    }
   });
 
   const registerMutation = useMutation<RequestResult, Error, InsertUser>({
-    mutationFn: (userData) => handleRequest('/api/register', 'POST', userData),
+    mutationFn: (userData) => {
+      console.log('Attempting registration...');
+      return handleRequest('/api/register', 'POST', userData);
+    },
     onSuccess: () => {
+      console.log('Registration successful, invalidating user query');
       queryClient.invalidateQueries({ queryKey: ['user'] });
     },
+    onError: (error) => {
+      console.error('Registration error:', error);
+    }
   });
 
   return {
