@@ -15,24 +15,13 @@ export interface StockAnalysis {
 
 export async function analyzeStockData(symbol: string, data: any): Promise<StockAnalysis> {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "You are a financial analyst. Analyze the stock data and provide insights in JSON format with the following structure: { sentiment: 'positive' | 'neutral' | 'negative', summary: string, recommendation: string, confidence: number }",
-        },
-        {
-          role: "user",
-          content: `Analyze this stock data for ${symbol}: ${JSON.stringify(data)}`,
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
-
-    return JSON.parse(response.choices[0].message.content);
+    const response = await fetch(`/api/ai/insights/${symbol}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch AI insights');
+    }
+    return response.json();
   } catch (error) {
-    console.error('OpenAI API error:', error);
+    console.error('AI analysis error:', error);
     throw new Error('Failed to analyze stock data');
   }
 }
@@ -45,24 +34,21 @@ export interface SocialMediaInsight {
 
 export async function analyzeSocialMedia(posts: any[]): Promise<SocialMediaInsight> {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "Analyze social media posts and provide insights in JSON format with the following structure: { trending: string[], sentiment: number, suggestions: string[] }",
-        },
-        {
-          role: "user",
-          content: `Analyze these social media posts: ${JSON.stringify(posts)}`,
-        },
-      ],
-      response_format: { type: "json_object" },
+    const response = await fetch('/api/social/insights', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ posts }),
     });
 
-    return JSON.parse(response.choices[0].message.content);
+    if (!response.ok) {
+      throw new Error('Failed to fetch social media insights');
+    }
+
+    return response.json();
   } catch (error) {
-    console.error('OpenAI API error:', error);
+    console.error('Social media analysis error:', error);
     throw new Error('Failed to analyze social media data');
   }
 }

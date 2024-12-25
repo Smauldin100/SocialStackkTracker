@@ -6,10 +6,7 @@ import { db } from "@db";
 import { stocks, watchlists, socialAccounts, aiInsights } from "@db/schema";
 import { eq } from "drizzle-orm";
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY environment variable is required");
-}
-
+// Configure OpenAI with the provided API key
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -29,7 +26,6 @@ export function registerRoutes(app: Express): Server {
     ws.on("message", async (message) => {
       try {
         const data = JSON.parse(message.toString());
-
         if (data.type === "SUBSCRIBE_STOCK") {
           const { symbol } = data;
           console.log(`Client subscribed to stock: ${symbol}`);
@@ -51,7 +47,6 @@ export function registerRoutes(app: Express): Server {
             }
           }, 5000);
 
-          // Clean up interval on connection close
           ws.on("close", () => {
             clearInterval(interval);
             console.log(`Client unsubscribed from stock: ${symbol}`);
@@ -65,62 +60,29 @@ export function registerRoutes(app: Express): Server {
 
   // Stock data endpoints
   app.get("/api/stocks/:symbol", async (req, res) => {
-    const { symbol } = req.params;
+    try {
+      const { symbol } = req.params;
+      // Simulated stock data
+      const prices = Array.from({ length: 20 }, (_, i) => ({
+        timestamp: new Date(Date.now() - i * 86400000).toISOString(),
+        price: Math.random() * 100 + 100,
+        volume: Math.floor(Math.random() * 1000000),
+      }));
 
-    // Simulated stock data
-    const prices = Array.from({ length: 20 }, (_, i) => ({
-      timestamp: new Date(Date.now() - i * 86400000).toISOString(),
-      price: Math.random() * 100 + 100,
-      volume: Math.floor(Math.random() * 1000000),
-    }));
-
-    res.json({ symbol, prices });
-  });
-
-  // Watchlist endpoints
-  app.get("/api/watchlists", async (req, res) => {
-    const result = await db.select().from(watchlists);
-    res.json(result);
-  });
-
-  // Social media feed endpoint
-  app.get("/api/social/feed", async (_req, res) => {
-    // Simulated social media posts
-    const posts = [
-      {
-        id: "1",
-        platform: "twitter",
-        author: {
-          name: "Market Analyst",
-          avatar: "https://api.dicebear.com/7.x/avatars/svg?seed=1",
-        },
-        content: "Tech stocks showing strong momentum today! #stocks #technology",
-        timestamp: new Date().toISOString(),
-        engagement: { likes: 120, shares: 45 },
-      },
-      {
-        id: "2",
-        platform: "linkedin",
-        author: {
-          name: "Financial Expert",
-          avatar: "https://api.dicebear.com/7.x/avatars/svg?seed=2",
-        },
-        content: "Latest market analysis suggests bullish trends in the tech sector.",
-        timestamp: new Date().toISOString(),
-        engagement: { likes: 89, shares: 23 },
-      },
-    ];
-
-    res.json(posts);
+      res.json({ symbol, prices });
+    } catch (error) {
+      console.error('Error fetching stock data:', error);
+      res.status(500).json({ error: "Failed to fetch stock data" });
+    }
   });
 
   // AI insights endpoint
   app.get("/api/ai/insights/:symbol", async (req, res) => {
-    const { symbol } = req.params;
-
     try {
+      const { symbol } = req.params;
+
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
+        model: "gpt-4o", // Using the latest model as specified
         messages: [
           {
             role: "system",
@@ -134,11 +96,47 @@ export function registerRoutes(app: Express): Server {
         response_format: { type: "json_object" },
       });
 
+      if (!completion.choices[0].message.content) {
+        throw new Error('No content in OpenAI response');
+      }
+
       const insights = JSON.parse(completion.choices[0].message.content);
       res.json(insights);
     } catch (error) {
       console.error('OpenAI API error:', error);
       res.status(500).json({ error: "Failed to generate insights" });
+    }
+  });
+
+  // Social media insights endpoint
+  app.post("/api/social/insights", async (req, res) => {
+    try {
+      const { posts } = req.body;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: "Analyze social media posts and provide insights in JSON format with the following structure: { trending: string[], sentiment: number, suggestions: string[] }",
+          },
+          {
+            role: "user",
+            content: `Analyze these social media posts: ${JSON.stringify(posts)}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      if (!completion.choices[0].message.content) {
+        throw new Error('No content in OpenAI response');
+      }
+
+      const insights = JSON.parse(completion.choices[0].message.content);
+      res.json(insights);
+    } catch (error) {
+      console.error('Social media analysis error:', error);
+      res.status(500).json({ error: "Failed to analyze social media data" });
     }
   });
 
