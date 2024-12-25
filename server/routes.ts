@@ -3,8 +3,8 @@ import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import OpenAI from "openai";
 import { db } from "@db";
-import { stocks, watchlists, socialAccounts, aiInsights } from "@db/schema";
-import { eq } from "drizzle-orm";
+import { posts, users } from "@db/schema";
+import { eq, desc } from "drizzle-orm";
 import { setupAuth } from "./auth";
 
 // Configure OpenAI with the provided API key
@@ -17,6 +17,68 @@ export function registerRoutes(app: Express): Server {
 
   // Set up authentication routes
   setupAuth(app);
+
+  // Social media endpoints
+  app.post("/api/social/posts", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    try {
+      const { content } = req.body;
+      if (!content?.trim()) {
+        return res.status(400).send("Content is required");
+      }
+
+      const [post] = await db
+        .insert(posts)
+        .values({
+          userId: req.user.id,
+          content,
+        })
+        .returning();
+
+      res.json(post);
+    } catch (error) {
+      console.error('Error creating post:', error);
+      res.status(500).json({ error: "Failed to create post" });
+    }
+  });
+
+  app.get("/api/social/feed", async (req, res) => {
+    try {
+      const feedPosts = await db.query.posts.findMany({
+        orderBy: [desc(posts.createdAt)],
+        limit: 50,
+        with: {
+          user: {
+            columns: {
+              username: true,
+            },
+          },
+        },
+      });
+
+      const formattedPosts = feedPosts.map(post => ({
+        id: post.id.toString(),
+        platform: 'internal',
+        author: {
+          name: post.user.username,
+        },
+        content: post.content,
+        timestamp: post.createdAt.toISOString(),
+        engagement: {
+          likes: post.likes,
+          shares: post.shares,
+        },
+      }));
+
+      res.json(formattedPosts);
+    } catch (error) {
+      console.error('Error fetching social feed:', error);
+      res.status(500).json({ error: "Failed to fetch social feed" });
+    }
+  });
 
   // WebSocket server for real-time stock updates
   const wss = new WebSocketServer({ 

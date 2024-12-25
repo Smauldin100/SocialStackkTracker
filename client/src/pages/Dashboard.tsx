@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Sparkles, TrendingUp, Share2, Bell } from 'lucide-react';
+import { CreatePost } from '@/components/CreatePost';
 
 export function Dashboard() {
   const [selectedStock, setSelectedStock] = useState('AAPL');
@@ -115,7 +116,8 @@ export function Dashboard() {
             </Card>
           </div>
 
-          <div>
+          <div className="space-y-6">
+            <CreatePost />
             <SocialFeed 
               posts={socialPosts || []}
               isLoading={isLoadingSocial}
