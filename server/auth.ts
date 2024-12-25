@@ -28,10 +28,9 @@ const crypto = {
   },
 };
 
-// extend express user object with our schema
 declare global {
   namespace Express {
-    interface User extends SelectUser { }
+    interface User extends SelectUser {}
   }
 }
 
@@ -43,7 +42,7 @@ export function setupAuth(app: Express) {
     saveUninitialized: false,
     cookie: {},
     store: new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
+      checkPeriod: 86400000,
     }),
   };
 
@@ -104,10 +103,10 @@ export function setupAuth(app: Express) {
       if (!result.success) {
         return res
           .status(400)
-          .send("Invalid input: " + result.error.issues.map(i => i.message).join(", "));
+          .send("Invalid input: " + result.error.errors.map(e => e.message).join(", "));
       }
 
-      const { username, password } = result.data;
+      const { username, password, email } = result.data;
 
       // Check if user already exists
       const [existingUser] = await db
@@ -129,17 +128,18 @@ export function setupAuth(app: Express) {
         .values({
           username,
           password: hashedPassword,
+          email,
+          preferences: {},
         })
         .returning();
 
-      // Log the user in after registration
       req.login(newUser, (err) => {
         if (err) {
           return next(err);
         }
         return res.json({
           message: "Registration successful",
-          user: { id: newUser.id, username: newUser.username },
+          user: { id: newUser.id, username: newUser.username, email: newUser.email },
         });
       });
     } catch (error) {
@@ -148,14 +148,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    const result = insertUserSchema.safeParse(req.body);
-    if (!result.success) {
-      return res
-        .status(400)
-        .send("Invalid input: " + result.error.issues.map(i => i.message).join(", "));
-    }
-
-    const cb = (err: any, user: Express.User, info: IVerifyOptions) => {
+    passport.authenticate("local", (err: any, user: Express.User | false, info: IVerifyOptions) => {
       if (err) {
         return next(err);
       }
@@ -171,11 +164,10 @@ export function setupAuth(app: Express) {
 
         return res.json({
           message: "Login successful",
-          user: { id: user.id, username: user.username },
+          user: { id: user.id, username: user.username, email: user.email },
         });
       });
-    };
-    passport.authenticate("local", cb)(req, res, next);
+    })(req, res, next);
   });
 
   app.post("/api/logout", (req, res) => {
@@ -183,16 +175,15 @@ export function setupAuth(app: Express) {
       if (err) {
         return res.status(500).send("Logout failed");
       }
-
       res.json({ message: "Logout successful" });
     });
   });
 
   app.get("/api/user", (req, res) => {
     if (req.isAuthenticated()) {
-      return res.json(req.user);
+      const { id, username, email } = req.user;
+      return res.json({ id, username, email });
     }
-
     res.status(401).send("Not logged in");
   });
 }

@@ -1,6 +1,7 @@
 import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
+import { z } from 'zod';
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -43,7 +44,6 @@ export const aiInsights = pgTable("ai_insights", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Relations
 export const usersRelations = relations(users, ({ many }) => ({
   watchlists: many(watchlists),
   socialAccounts: many(socialAccounts),
@@ -58,11 +58,10 @@ export const watchlistsRelations = relations(watchlists, ({ one, many }) => ({
   stocks: many(stocks),
 }));
 
-// Schemas
-export const insertUserSchema = createInsertSchema(users, {
-  id: undefined,
-  preferences: undefined,
-  createdAt: undefined,
+export const insertUserSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email("Invalid email format"),
 });
 export const selectUserSchema = createSelectSchema(users);
 
@@ -78,7 +77,6 @@ export const selectSocialAccountSchema = createSelectSchema(socialAccounts);
 export const insertAiInsightSchema = createInsertSchema(aiInsights);
 export const selectAiInsightSchema = createSelectSchema(aiInsights);
 
-// Types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 
