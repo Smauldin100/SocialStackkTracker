@@ -6,32 +6,59 @@ import { db } from "@db";
 import { stocks, watchlists, socialAccounts, aiInsights } from "@db/schema";
 import { eq } from "drizzle-orm";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error("OPENAI_API_KEY environment variable is required");
+}
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
   // WebSocket server for real-time stock updates
-  const wss = new WebSocketServer({ server: httpServer });
+  const wss = new WebSocketServer({ 
+    server: httpServer,
+    path: "/api/ws"  // Specify a path to avoid conflicts with Vite HMR
+  });
 
   wss.on("connection", (ws) => {
-    // Ignore vite HMR connections
-    if (ws.protocol === "vite-hmr") return;
+    console.log("New WebSocket connection established");
 
     ws.on("message", async (message) => {
-      const { type, symbol } = JSON.parse(message.toString());
-      
-      if (type === "SUBSCRIBE_STOCK") {
-        // Simulate real-time stock updates
-        setInterval(() => {
-          const price = Math.random() * 100 + 100;
-          ws.send(JSON.stringify({
-            type: "STOCK_UPDATE",
-            symbol,
-            price,
-            timestamp: new Date().toISOString(),
-          }));
-        }, 5000);
+      try {
+        const data = JSON.parse(message.toString());
+
+        if (data.type === "SUBSCRIBE_STOCK") {
+          const { symbol } = data;
+          console.log(`Client subscribed to stock: ${symbol}`);
+
+          // Simulate real-time stock updates
+          const interval = setInterval(() => {
+            if (ws.readyState === ws.OPEN) {
+              const price = Math.random() * 100 + 100;
+              ws.send(JSON.stringify({
+                type: "STOCK_UPDATE",
+                symbol,
+                data: {
+                  price,
+                  timestamp: new Date().toISOString()
+                }
+              }));
+            } else {
+              clearInterval(interval);
+            }
+          }, 5000);
+
+          // Clean up interval on connection close
+          ws.on("close", () => {
+            clearInterval(interval);
+            console.log(`Client unsubscribed from stock: ${symbol}`);
+          });
+        }
+      } catch (error) {
+        console.error("WebSocket message error:", error);
       }
     });
   });
@@ -39,7 +66,7 @@ export function registerRoutes(app: Express): Server {
   // Stock data endpoints
   app.get("/api/stocks/:symbol", async (req, res) => {
     const { symbol } = req.params;
-    
+
     // Simulated stock data
     const prices = Array.from({ length: 20 }, (_, i) => ({
       timestamp: new Date(Date.now() - i * 86400000).toISOString(),
@@ -92,12 +119,12 @@ export function registerRoutes(app: Express): Server {
     const { symbol } = req.params;
 
     try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024
         messages: [
           {
             role: "system",
-            content: "You are a financial analyst. Analyze the stock and provide insights.",
+            content: "You are a financial analyst. Analyze the stock and provide insights in JSON format with the following structure: { sentiment: 'positive' | 'neutral' | 'negative', summary: string, recommendation: string, confidence: number }",
           },
           {
             role: "user",
@@ -107,9 +134,10 @@ export function registerRoutes(app: Express): Server {
         response_format: { type: "json_object" },
       });
 
-      const insights = JSON.parse(response.choices[0].message.content);
+      const insights = JSON.parse(completion.choices[0].message.content);
       res.json(insights);
     } catch (error) {
+      console.error('OpenAI API error:', error);
       res.status(500).json({ error: "Failed to generate insights" });
     }
   });

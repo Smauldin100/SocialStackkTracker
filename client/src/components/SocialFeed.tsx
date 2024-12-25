@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { SiTwitter, SiLinkedin, SiFacebook } from 'react-icons/si';
+import { BsTwitterX, BsLinkedin, BsFacebook } from 'react-icons/bs';
 
 interface SocialPost {
   id: string;
@@ -25,9 +25,9 @@ interface SocialFeedProps {
 }
 
 const platformIcons = {
-  twitter: SiTwitter,
-  linkedin: SiLinkedin,
-  facebook: SiFacebook,
+  twitter: BsTwitterX,
+  linkedin: BsLinkedin,
+  facebook: BsFacebook,
 };
 
 export function SocialFeed({ posts, isLoading }: SocialFeedProps) {
@@ -64,14 +64,14 @@ export function SocialFeed({ posts, isLoading }: SocialFeedProps) {
           <div className="space-y-4">
             {posts.map((post) => {
               const PlatformIcon = platformIcons[post.platform];
-              
+
               return (
                 <div key={post.id} className="flex items-start space-x-4 p-4 rounded-lg bg-card">
                   <Avatar>
                     <AvatarImage src={post.author.avatar} />
                     <AvatarFallback>{post.author.name[0]}</AvatarFallback>
                   </Avatar>
-                  
+
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
@@ -82,9 +82,9 @@ export function SocialFeed({ posts, isLoading }: SocialFeedProps) {
                         {new Date(post.timestamp).toLocaleDateString()}
                       </span>
                     </div>
-                    
+
                     <p className="text-sm">{post.content}</p>
-                    
+
                     <div className="flex items-center space-x-2">
                       <Badge variant="secondary">
                         {post.engagement.likes} likes
