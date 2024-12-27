@@ -1,11 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Brain, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Brain, TrendingUp, TrendingDown, Minus, AlertCircle } from 'lucide-react';
 import type { StockAnalysis } from '@/lib/openai';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface AIInsightsProps {
   insights: StockAnalysis;
   isLoading?: boolean;
+  error?: Error | null;
 }
 
 const container = {
@@ -23,7 +25,19 @@ const item = {
   show: { opacity: 1, y: 0 }
 };
 
-export function AIInsights({ insights, isLoading }: AIInsightsProps) {
+export function AIInsights({ insights, isLoading, error }: AIInsightsProps) {
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>
+          {error.message || 'Failed to load AI insights'}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
   if (isLoading) {
     return (
       <motion.div

@@ -11,7 +11,7 @@ type RequestResult = {
 async function handleRequest(
   url: string,
   method: string,
-  body?: InsertUser
+  body?: Record<string, unknown>
 ): Promise<RequestResult> {
   try {
     console.log(`Making ${method} request to ${url}${body ? ' with body' : ''}`);
@@ -37,9 +37,9 @@ async function handleRequest(
 
     console.log(`Request successful: ${response.status}`);
     return { ok: true };
-  } catch (e: any) {
-    console.error('Request error:', e);
-    return { ok: false, message: e.toString() };
+  } catch (error) {
+    console.error('Request error:', error);
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -71,6 +71,15 @@ async function fetchUser(): Promise<SelectUser | null> {
   return userData;
 }
 
+export interface LoginCredentials {
+  username: string;
+  password: string;
+}
+
+export interface RegisterCredentials extends LoginCredentials {
+  email: string;
+}
+
 export function useUser() {
   const queryClient = useQueryClient();
 
@@ -81,47 +90,7 @@ export function useUser() {
     retry: false
   });
 
-  const loginMutation = useMutation<RequestResult, Error, InsertUser>({
-    mutationFn: (userData) => {
-      console.log('Attempting login...');
-      return handleRequest('/api/login', 'POST', userData);
-    },
-    onSuccess: () => {
-      console.log('Login successful, invalidating user query');
-      queryClient.invalidateQueries({ queryKey: ['user'] });
-    },
-    onError: (error) => {
-      console.error('Login error:', error);
-    }
-  });
-
-  import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { InsertUser, SelectUser } from '@db/schema';
-
-const queryClient = useQueryClient();
-
-export function useUser() {
-  const { data: user, isLoading, error } = useQuery<SelectUser | null>({
-    queryKey: ['user'],
-    queryFn: async () => {
-      console.log('Fetching user data...');
-      const response = await fetch('/api/user', {
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          console.log('User not authenticated');
-          return null;
-        }
-        throw new Error('Failed to fetch user');
-      }
-
-      return response.json();
-    }
-  });
-
-  const loginMutation = useMutation<RequestResult, Error, { username: string; password: string }>({
+  const loginMutation = useMutation<RequestResult, Error, LoginCredentials>({
     mutationFn: (credentials) => {
       console.log('Attempting login...');
       return handleRequest('/api/login', 'POST', credentials);
@@ -129,6 +98,9 @@ export function useUser() {
     onSuccess: () => {
       console.log('Login successful, invalidating user query');
       queryClient.invalidateQueries({ queryKey: ['user'] });
+    },
+    onError: (error) => {
+      console.error('Login error:', error);
     }
   });
 
@@ -143,7 +115,7 @@ export function useUser() {
     }
   });
 
-  const registerMutation = useMutation<RequestResult, Error, InsertUser>({
+  const registerMutation = useMutation<RequestResult, Error, RegisterCredentials>({
     mutationFn: (userData) => {
       console.log('Attempting registration...');
       return handleRequest('/api/register', 'POST', userData);
@@ -151,9 +123,6 @@ export function useUser() {
     onSuccess: () => {
       console.log('Registration successful, invalidating user query');
       queryClient.invalidateQueries({ queryKey: ['user'] });
-    },
-    onError: (error) => {
-      console.error('Registration error:', error);
     }
   });
 
