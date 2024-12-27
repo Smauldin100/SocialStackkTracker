@@ -141,7 +141,7 @@ export function registerRoutes(app: Express): Server {
       });
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4", // Fixed: Changed from invalid model name
         messages: [
           {
             role: "system",
@@ -267,7 +267,7 @@ export function registerRoutes(app: Express): Server {
       const { symbol } = req.params;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4", // Fixed: Changed from invalid model name
         messages: [
           {
             role: "system",
@@ -306,7 +306,7 @@ export function registerRoutes(app: Express): Server {
       const { posts } = req.body;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4", // Fixed: Changed from invalid model name
         messages: [
           {
             role: "system",

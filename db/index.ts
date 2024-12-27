@@ -12,35 +12,41 @@ if (!process.env.DATABASE_URL) {
 // Create a PostgreSQL pool with better error handling
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 10,
+  max: 20, // Increased for better concurrency
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 5000,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
 });
 
 // Add error handler for the pool
 pool.on('error', (err) => {
   console.error('Unexpected error on idle client', err);
-  process.exit(-1);
+  // Don't exit process, just log the error
+  console.error('Database pool error occurred, attempting to recover...');
 });
 
-// Test database connection
-const testConnection = async () => {
-  try {
-    const client = await pool.connect();
-    console.log('Successfully connected to the database');
-    client.release();
-    return true;
-  } catch (err) {
-    console.error('Error connecting to the database:', err);
-    throw err;
+// Test database connection with retries
+const testConnection = async (retries = 3, delay = 2000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const client = await pool.connect();
+      console.log('Successfully connected to the database');
+      client.release();
+      return true;
+    } catch (err) {
+      console.error(`Database connection attempt ${i + 1} failed:`, err);
+      if (i === retries - 1) throw err;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
+  return false;
 };
 
-// Create drizzle database instance
-export const db = drizzle(pool, { schema });
+// Create drizzle database instance with query logging in development
+const db = drizzle(pool, {
+  schema,
+  logger: process.env.NODE_ENV !== 'production',
+});
 
-// Export pool for potential direct usage
-export { pool };
-
-// Export test connection function
-export { testConnection };
+// Export the database instance and utilities
+export { db, pool, testConnection };

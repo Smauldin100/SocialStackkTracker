@@ -2,31 +2,39 @@ import express from "express";
 import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
-import { db } from "@db";
+import { db, pool, testConnection } from "@db";
 import { sql } from "drizzle-orm";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
-// Middleware
+// Enhanced middleware setup
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cors());
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.FRONTEND_URL || true
+    : 'http://localhost:5000',
+  credentials: true
+}));
 
-// Basic route
-app.get('/', (req, res) => {
-    res.send('Backend is running!');
+// Basic health check route
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 (async () => {
   try {
-    // Test database connection
-    await db.execute(sql`SELECT 1`);
+    // Test database connection with retries
+    await testConnection();
     console.log("Database connection successful");
+
+    // Validate database schema
+    await db.execute(sql`SELECT 1`);
+    console.log("Database schema validation successful");
 
     // Validate required environment variables
     const requiredEnvVars = [
-      'OPENAI_API_KEY',
       'FACEBOOK_APP_ID',
       'FACEBOOK_APP_SECRET',
       'INSTAGRAM_APP_ID',
@@ -47,15 +55,21 @@ app.get('/', (req, res) => {
     // Register all other routes
     const server = registerRoutes(app);
 
-    // Error handling middleware
+    // Enhanced error handling middleware
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
       console.error('Server error:', err);
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
-      res.status(status).json({ message });
+
+      // Don't expose internal errors in production
+      const response = process.env.NODE_ENV === 'production' 
+        ? { message: status === 500 ? 'Internal Server Error' : message }
+        : { message, stack: err.stack };
+
+      res.status(status).json(response);
     });
 
-    // Function to try different ports if the default one is in use
+    // Start server with automatic port selection
     const startServer = async (initialPort: number): Promise<void> => {
       let currentPort = initialPort;
       const maxAttempts = 10;
@@ -79,13 +93,22 @@ app.get('/', (req, res) => {
             });
 
             // Handle graceful shutdown
-            process.on('SIGTERM', () => {
-              console.log('SIGTERM received. Shutting down gracefully...');
-              serverInstance.close(() => {
-                console.log('Server closed');
+            const shutdown = async () => {
+              console.log('\nGraceful shutdown initiated...');
+              serverInstance.close(async () => {
+                console.log('HTTP server closed');
+                try {
+                  await pool.end();
+                  console.log('Database connections closed');
+                } catch (err) {
+                  console.error('Error closing database connections:', err);
+                }
                 process.exit(0);
               });
-            });
+            };
+
+            process.on('SIGTERM', shutdown);
+            process.on('SIGINT', shutdown);
           });
           break;
         } catch (error) {

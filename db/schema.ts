@@ -28,7 +28,7 @@ export type SelectUser = typeof users.$inferSelect;
 
 export const watchlists = pgTable("watchlists", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   name: text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -36,13 +36,13 @@ export const watchlists = pgTable("watchlists", {
 export const stocks = pgTable("stocks", {
   id: serial("id").primaryKey(),
   symbol: text("symbol").unique().notNull(),
-  watchlistId: integer("watchlist_id").references(() => watchlists.id).notNull(),
+  watchlistId: integer("watchlist_id").references(() => watchlists.id, { onDelete: 'cascade' }).notNull(),
   alerts: jsonb("alerts").default([]).notNull(),
 });
 
 export const socialAccounts = pgTable("social_accounts", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   platform: text("platform").notNull(),
   accountId: text("account_id").notNull(),
   accessToken: text("access_token").notNull(),
@@ -52,7 +52,7 @@ export const socialAccounts = pgTable("social_accounts", {
 
 export const aiInsights = pgTable("ai_insights", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   type: text("type").notNull(),
   content: text("content").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -60,13 +60,14 @@ export const aiInsights = pgTable("ai_insights", {
 
 export const posts = pgTable("posts", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   content: text("content").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   likes: integer("likes").default(0).notNull(),
   shares: integer("shares").default(0).notNull(),
 });
 
+// Relations
 export const usersRelations = relations(users, ({ many }) => ({
   watchlists: many(watchlists),
   socialAccounts: many(socialAccounts),
@@ -89,18 +90,23 @@ export const postsRelations = relations(posts, ({ one }) => ({
   }),
 }));
 
+// Schema validation for watchlists
 export const insertWatchlistSchema = createInsertSchema(watchlists);
 export const selectWatchlistSchema = createSelectSchema(watchlists);
 
+// Schema validation for stocks
 export const insertStockSchema = createInsertSchema(stocks);
 export const selectStockSchema = createSelectSchema(stocks);
 
+// Schema validation for social accounts
 export const insertSocialAccountSchema = createInsertSchema(socialAccounts);
 export const selectSocialAccountSchema = createSelectSchema(socialAccounts);
 
+// Schema validation for AI insights
 export const insertAiInsightSchema = createInsertSchema(aiInsights);
 export const selectAiInsightSchema = createSelectSchema(aiInsights);
 
+// Schema validation for posts
 export const insertPostSchema = createInsertSchema(posts, {
   id: undefined,
   createdAt: undefined,
@@ -109,6 +115,7 @@ export const insertPostSchema = createInsertSchema(posts, {
 });
 export const selectPostSchema = createSelectSchema(posts);
 
+// Type exports
 export type Watchlist = typeof watchlists.$inferSelect;
 export type NewWatchlist = typeof watchlists.$inferInsert;
 
