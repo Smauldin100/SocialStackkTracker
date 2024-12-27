@@ -6,8 +6,9 @@ import { posts, comments, follows, users } from "@db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { sql } from 'drizzle-orm';
 
+type UserType = typeof users.$inferSelect;
+
 export function registerRoutes(app: Express): Server {
-  // Create HTTP server
   const httpServer = createServer(app);
 
   // Authentication middleware
@@ -27,7 +28,7 @@ export function registerRoutes(app: Express): Server {
   // Posts endpoints
   app.post("/api/posts", authMiddleware, async (req, res) => {
     try {
-      const { content, mediaUrls } = req.body;
+      const { content } = req.body;
       if (!content?.trim()) {
         return res.status(400).send("Content is required");
       }
@@ -35,9 +36,8 @@ export function registerRoutes(app: Express): Server {
       const [post] = await db
         .insert(posts)
         .values({
-          userId: req.user!.id,
+          authorId: (req.user as UserType).id,
           content,
-          mediaUrls: mediaUrls || [],
         })
         .returning();
 
@@ -53,10 +53,10 @@ export function registerRoutes(app: Express): Server {
       const allPosts = await db.query.posts.findMany({
         orderBy: [desc(posts.createdAt)],
         with: {
-          user: true,
+          author: true,
           comments: {
             with: {
-              user: true,
+              author: true,
             },
           },
         },
@@ -82,7 +82,7 @@ export function registerRoutes(app: Express): Server {
         .insert(comments)
         .values({
           postId,
-          userId: req.user!.id,
+          authorId: (req.user as UserType).id,
           content,
         })
         .returning();
@@ -98,7 +98,7 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/users/:userId/follow", authMiddleware, async (req, res) => {
     try {
       const followingId = parseInt(req.params.userId);
-      const followerId = req.user!.id;
+      const followerId = (req.user as UserType).id;
 
       if (followerId === followingId) {
         return res.status(400).json({ error: "Cannot follow yourself" });
@@ -122,7 +122,7 @@ export function registerRoutes(app: Express): Server {
   app.delete("/api/users/:userId/follow", authMiddleware, async (req, res) => {
     try {
       const followingId = parseInt(req.params.userId);
-      const followerId = req.user!.id;
+      const followerId = (req.user as UserType).id;
 
       await db
         .delete(follows)
@@ -149,7 +149,6 @@ export function registerRoutes(app: Express): Server {
           username: users.username,
           email: users.email,
           displayName: users.displayName,
-          bio: users.bio,
           avatarUrl: users.avatarUrl,
           createdAt: users.createdAt,
         })
@@ -162,12 +161,12 @@ export function registerRoutes(app: Express): Server {
       }
 
       const [{ count: followersCount }] = await db
-        .select({ count: sql`count(*)::int` })
+        .select({ count: sql<number>`count(*)::int` })
         .from(follows)
         .where(eq(follows.followingId, userId));
 
       const [{ count: followingCount }] = await db
-        .select({ count: sql`count(*)::int` })
+        .select({ count: sql<number>`count(*)::int` })
         .from(follows)
         .where(eq(follows.followerId, userId));
 
