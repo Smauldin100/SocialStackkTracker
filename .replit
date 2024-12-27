@@ -8,8 +8,8 @@ channel = "stable-24_05"
 
 [deployment]
 deploymentTarget = "cloudrun"
-build = ["npm", "run", "build"]
-run = ["npm", "run", "start"]
+build = ["npm", "ci", "npm", "run", "build"]
+run = ["npm", "start"]
 ignorePorts = false
 
 [[ports]]
@@ -18,3 +18,4 @@ externalPort = 80
 
 [env]
 NODE_ENV = "production"
+HOST = "0.0.0.0"
