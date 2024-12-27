@@ -4,8 +4,9 @@ import { WebSocketServer } from "ws";
 import OpenAI from "openai";
 import { db } from "@db";
 import { posts, users } from "@db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { setupAuth } from "./auth";
+import { socialMediaRouter } from "./social-media";
 
 // Configure OpenAI with the provided API key
 const openai = new OpenAI({
@@ -17,6 +18,9 @@ export function registerRoutes(app: Express): Server {
 
   // Set up authentication routes
   setupAuth(app);
+
+  // Register social media routes
+  app.use('/api/social', socialMediaRouter);
 
   // Social media endpoints
   app.post("/api/social/posts", async (req, res) => {
@@ -80,16 +84,14 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // New endpoint for social media sentiment snapshot
+  // Enhanced social media snapshot endpoint
   app.get("/api/social/snapshot/:symbol", async (req, res) => {
     try {
       const { symbol } = req.params;
 
-      // Fetch recent social media posts mentioning this stock
+      // Get posts mentioning the stock symbol using SQL ILIKE for case-insensitive search
       const socialPosts = await db.query.posts.findMany({
-        where: (posts) => {
-          return eq(posts.content, new RegExp(`\\b${symbol}\\b`, 'i'));
-        },
+        where: sql`${posts.content} ILIKE ${`%${symbol}%`}`,
         orderBy: [desc(posts.createdAt)],
         limit: 100,
       });
