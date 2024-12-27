@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "postgresql-16", "nodejs-22", "nodejs-19", "qbasic", "typescript-language-server", "vue-node-20"]
+modules = ["nodejs-20", "web", "postgresql-16"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
@@ -6,13 +6,12 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 channel = "stable-24_05"
 
 [deployment]
-deploymentTarget = "static"
+deploymentTarget = "cloudrun"
 build = ["npm", "run", "build"]
-publicDir = "dist"
+run = ["npm", "run", "start"]
 
 [[ports]]
 localPort = 5000
-externalPort = 5000
 
 [workflows]
 runButton = "Start application"
