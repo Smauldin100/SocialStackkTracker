@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from 'zod';
@@ -19,12 +19,42 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Social Media Accounts table for storing connected platform accounts
+export const socialAccounts = pgTable("social_accounts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  platform: text("platform").notNull(), // 'facebook', 'instagram', 'tiktok'
+  platformUserId: text("platform_user_id").notNull(),
+  platformUsername: text("platform_username"),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  isActive: boolean("is_active").default(true),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Posts table schema with social media engagement tracking
 export const posts = pgTable("posts", {
   id: serial("id").primaryKey(),
   content: text("content").notNull(),
   authorId: integer("author_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  platform: text("platform").notNull(), // 'facebook', 'instagram', 'tiktok'
+  platformPostId: text("platform_post_id"), // ID of the post on the social platform
+  postUrl: text("post_url"), // URL to the post on the platform
+  scheduledFor: timestamp("scheduled_for"), // For scheduled posts
+  publishedAt: timestamp("published_at"), // When the post was actually published
+  status: text("status").default('draft').notNull(), // 'draft', 'scheduled', 'published', 'failed'
   attachments: jsonb("attachments").$type<string[]>(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(), // Platform-specific post metadata
+  analytics: jsonb("analytics").$type<{
+    impressions: number;
+    reaches: number;
+    engagements: number;
+    shares: number;
+    saves: number;
+  }>(),
   likesCount: integer("likes_count").default(0).notNull(),
   sharesCount: integer("shares_count").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -38,6 +68,7 @@ export const comments = pgTable("comments", {
   postId: integer("post_id").references(() => posts.id, { onDelete: 'cascade' }).notNull(),
   authorId: integer("author_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   parentId: integer("parent_id").references(() => comments.id, { onDelete: 'set null' }),
+  platformCommentId: text("platform_comment_id"), // ID of the comment on the social platform
   likesCount: integer("likes_count").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -53,11 +84,34 @@ export const reactions = pgTable("reactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Analytics snapshots for tracking metrics over time
+export const analyticsSnapshots = pgTable("analytics_snapshots", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  socialAccountId: integer("social_account_id").references(() => socialAccounts.id, { onDelete: 'cascade' }).notNull(),
+  platform: text("platform").notNull(),
+  metrics: jsonb("metrics").$type<{
+    followers: number;
+    following: number;
+    posts: number;
+    avgEngagement: number;
+    reachRate: number;
+    topPostTypes: Record<string, number>;
+    audienceDemo: Record<string, number>;
+  }>(),
+  snapshotDate: timestamp("snapshot_date").defaultNow().notNull(),
+});
+
 // Define relationships
 export const usersRelations = relations(users, ({ many }) => ({
   posts: many(posts),
   comments: many(comments),
   reactions: many(reactions),
+  socialAccounts: many(socialAccounts),
+}));
+
+export const socialAccountsRelations = relations(socialAccounts, ({ one }) => ({
+  user: one(users, { fields: [socialAccounts.userId], references: [users.id] }),
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
@@ -66,7 +120,7 @@ export const postsRelations = relations(posts, ({ one, many }) => ({
   reactions: many(reactions),
 }));
 
-export const commentsRelations = relations(comments, ({ one, many }) => ({
+export const commentsRelations = relations(comments, ({ one }) => ({
   post: one(posts, { fields: [comments.postId], references: [posts.id] }),
   author: one(users, { fields: [comments.authorId], references: [users.id] }),
   parent: one(comments, { fields: [comments.parentId], references: [comments.id] }),
@@ -94,9 +148,13 @@ export const selectUserSchema = createSelectSchema(users);
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type SocialAccount = typeof socialAccounts.$inferSelect;
+export type NewSocialAccount = typeof socialAccounts.$inferInsert;
 export type Post = typeof posts.$inferSelect;
 export type NewPost = typeof posts.$inferInsert;
 export type Comment = typeof comments.$inferSelect;
 export type NewComment = typeof comments.$inferInsert;
 export type Reaction = typeof reactions.$inferSelect;
 export type NewReaction = typeof reactions.$inferInsert;
+export type AnalyticsSnapshot = typeof analyticsSnapshots.$inferSelect;
+export type NewAnalyticsSnapshot = typeof analyticsSnapshots.$inferInsert;
