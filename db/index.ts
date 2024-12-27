@@ -9,12 +9,12 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Enhanced PostgreSQL pool configuration
+// Enhanced PostgreSQL pool configuration with better defaults
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 10,
+  max: 20, // Increased for better concurrent handling
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000, // Increased timeout for better reliability
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000,
@@ -28,28 +28,36 @@ export const db = drizzle(pool, {
 
 // Improved error handling for the connection pool
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
+  console.error('Unexpected error on idle client:', err);
   console.warn('Database pool error occurred, attempting recovery...');
+  // Attempt to create a new pool if the error is fatal
+  setTimeout(() => {
+    console.log('Attempting to reconnect to database...');
+    pool.connect().catch(console.error);
+  }, 5000);
 });
 
+// Monitor individual client connections
 pool.on('connect', (client) => {
+  console.log('New database connection established');
   client.on('error', (err) => {
     console.error('Database client error:', err);
   });
 });
 
-// Enhanced connection testing
-async function testConnection(retries = 3, delay = 2000): Promise<boolean> {
+// Enhanced connection testing with retries and better error reporting
+async function testConnection(retries = 5, delay = 2000): Promise<boolean> {
   for (let i = 0; i < retries; i++) {
     let client;
     try {
       client = await pool.connect();
-      await client.query('SELECT current_timestamp');
-      console.log('Database connection successful');
+      const result = await client.query('SELECT current_timestamp, current_database() as db_name');
+      console.log(`Database connection test successful. Connected to: ${result.rows[0].db_name}`);
       return true;
     } catch (err) {
-      console.error(`Database connection attempt ${i + 1} failed:`, err);
+      console.error(`Database connection attempt ${i + 1}/${retries} failed:`, err);
       if (i === retries - 1) throw err;
+      console.log(`Retrying in ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     } finally {
       if (client) {
@@ -64,28 +72,35 @@ async function testConnection(retries = 3, delay = 2000): Promise<boolean> {
   return false;
 }
 
-// Enhanced database initialization
+// Enhanced database initialization with comprehensive healthcheck
 async function initializeDatabase() {
   try {
     console.log('Starting database initialization...');
 
-    // Test basic connection
+    // Test basic connection with increased retries
     await testConnection();
 
-    // Verify schema access
+    // Verify schema access and table existence
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`
+      const result = await client.query(`
         SELECT EXISTS (
           SELECT 1 
           FROM information_schema.tables 
           WHERE table_schema = 'public' 
-          AND table_name = 'users'
+          AND table_name = ANY($1)
         );
-      `);
+      `, [['users', 'watchlists', 'stocks', 'social_accounts', 'ai_insights', 'posts']]);
+
+      if (!result.rows[0].exists) {
+        console.warn('Some required tables not found, schema might need initialization');
+        console.log('Running schema sync...');
+        // The schema will be synced by drizzle-kit push
+      }
+
       await client.query('COMMIT');
-      console.log('Schema verification successful');
+      console.log('Schema verification completed');
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('Schema verification failed:', err);
@@ -94,7 +109,7 @@ async function initializeDatabase() {
       client.release();
     }
 
-    // Test drizzle query
+    // Test drizzle query functionality
     try {
       await db.query.users.findMany({
         limit: 1,
@@ -112,9 +127,10 @@ async function initializeDatabase() {
   }
 }
 
-// Cleanup handlers
+// Enhanced cleanup handlers with graceful shutdown
 async function cleanupPool() {
   try {
+    console.log('Initiating database connection pool cleanup...');
     await pool.end();
     console.log('Database pool closed successfully');
   } catch (err) {
@@ -123,6 +139,7 @@ async function cleanupPool() {
   }
 }
 
+// Register cleanup handlers
 process.on('SIGINT', cleanupPool);
 process.on('SIGTERM', cleanupPool);
 

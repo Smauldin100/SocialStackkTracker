@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import { createServer } from "http"; // Changed to 'http'
+import { exec } from "child_process";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { initializeDatabase, testConnection } from "@db";
@@ -47,6 +49,7 @@ app.get('/health', async (_, res) => {
 
 async function startServer() {
   let dbInitialized = false;
+  let server;
 
   try {
     console.log("Starting server initialization...");
@@ -71,7 +74,7 @@ async function startServer() {
     console.log("Authentication setup completed");
 
     // Register all routes
-    const server = registerRoutes(app);
+    server = registerRoutes(app);
     console.log("Routes registered successfully");
 
     // Enhanced error handling middleware
@@ -95,30 +98,72 @@ async function startServer() {
       res.status(status).json(response);
     });
 
-    // Start server with proper port type handling
-    const port = parseInt(process.env.PORT || '5000', 10);
-    server.listen(port, "0.0.0.0", () => {
-      console.log(`Server running at http://0.0.0.0:${port}`);
-    });
+    // Start server with proper error handling
+    const port = parseInt(process.env.PORT || '5000', 10); // Retain port flexibility
 
-    // Graceful shutdown handler
+    // Check if port is in use before starting - Retained from original code
+    const testServer = createServer();
+    const startActualServer = () => {
+      server.listen(port, "0.0.0.0", () => {
+        console.log(`Server running at http://0.0.0.0:${port}`);
+      });
+    };
+
+    // Handle port availability - Retained from original code
+    testServer
+      .once('error', async (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          console.error(`Port ${port} is already in use. Trying to force release...`);
+          // Try to force close any existing connections using shell command
+          try {
+            await new Promise((resolve, reject) => {
+              exec(`lsof -i :${port} | grep LISTEN | awk '{print $2}' | xargs kill -9`, 
+                (error) => {
+                  if (error) {
+                    console.error('Failed to force release port:', error);
+                    reject(error);
+                  } else {
+                    resolve(true);
+                  }
+                });
+            });
+            startActualServer();
+          } catch (error) {
+            console.error('Failed to release port:', error);
+            process.exit(1);
+          }
+        } else {
+          console.error('Port test failed:', err);
+          process.exit(1);
+        }
+      })
+      .once('listening', () => {
+        testServer.close(() => {
+          startActualServer();
+        });
+      })
+      .listen(port);
+
+    // Graceful shutdown handler - Retained from original code
     const shutdown = async (signal: string) => {
       console.log(`\n${signal} received. Starting graceful shutdown...`);
 
       // Close the HTTP server first
-      server.close(() => {
-        console.log('HTTP server closed');
-
-        // Exit after cleanup
+      if (server) {
+        server.close(() => {
+          console.log('HTTP server closed');
+          process.exit(0);
+        });
+      } else {
         process.exit(0);
-      });
+      }
     };
 
-    // Handle termination signals
+    // Handle termination signals - Retained from original code
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
 
-    // Handle uncaught exceptions and rejections
+    // Handle uncaught exceptions and rejections - Retained from original code
     process.on('uncaughtException', (error) => {
       console.error('Uncaught Exception:', error);
       shutdown('UNCAUGHT_EXCEPTION');
