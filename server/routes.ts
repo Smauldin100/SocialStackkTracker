@@ -3,21 +3,13 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { db } from "@db";
 import { posts, comments, users, reactions } from "@db/schema";
-import { eq, desc, and, isNull, sql } from "drizzle-orm";
+import { eq, desc, and, isNull } from "drizzle-orm";
 import { setupFacebookRoutes } from "./social-media/facebook";
 
 type UserType = typeof users.$inferSelect;
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
-
-  // Authentication middleware
-  const authMiddleware = (req: any, res: any, next: any) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
-    next();
-  };
 
   // WebSocket setup for real-time updates
   const wss = new WebSocketServer({ 
@@ -35,6 +27,44 @@ export function registerRoutes(app: Express): Server {
     ws.on('close', function close() {
       console.log('Client disconnected');
     });
+  });
+
+  // Authentication middleware
+  const authMiddleware = (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    next();
+  };
+
+  // Social metrics endpoint
+  app.get("/api/social-metrics", authMiddleware, async (req, res) => {
+    try {
+      const userId = (req.user as UserType).id;
+
+      // Get total posts
+      const totalPosts = await db.query.posts.findMany({
+        where: eq(posts.authorId, userId)
+      });
+
+      // Get total reactions
+      const totalReactions = await db.query.reactions.findMany({
+        where: eq(reactions.userId, userId)
+      });
+
+      // Calculate metrics
+      const metrics = {
+        totalEngagements: totalReactions.length,
+        totalFollowers: Math.floor(Math.random() * 1000), // Mock data
+        averageEngagement: `${((totalReactions.length / Math.max(totalPosts.length, 1)) * 100).toFixed(1)}%`,
+        scheduledPosts: 0 // To be implemented with scheduling feature
+      };
+
+      res.json(metrics);
+    } catch (error) {
+      console.error('Error fetching social metrics:', error);
+      res.status(500).json({ error: "Failed to fetch social metrics" });
+    }
   });
 
   // Social Media Platform Routes
@@ -63,10 +93,10 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Posts endpoints with reactions
+  // Posts endpoints
   app.post("/api/posts", authMiddleware, async (req, res) => {
     try {
-      const { content, attachments } = req.body;
+      const { content } = req.body;
       if (!content?.trim()) {
         return res.status(400).json({ error: "Content is required" });
       }
@@ -76,10 +106,10 @@ export function registerRoutes(app: Express): Server {
         .values({
           authorId: (req.user as UserType).id,
           content: content.trim(),
-          attachments,
         })
         .returning();
 
+      // Notify connected clients about new post
       const message = JSON.stringify({ type: 'NEW_POST', post });
       wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
@@ -94,7 +124,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get posts with reactions and nested comments
+  // Get posts with comments and reactions
   app.get("/api/posts", async (req, res) => {
     try {
       const allPosts = await db.query.posts.findMany({
@@ -119,7 +149,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Comments with threading support
+  // Comments endpoints
   app.post("/api/posts/:postId/comments", authMiddleware, async (req, res) => {
     try {
       const { content, parentId } = req.body;
