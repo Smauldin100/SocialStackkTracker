@@ -8,16 +8,18 @@ import { eq, desc, sql } from "drizzle-orm";
 import { setupAuth } from "./auth";
 import { socialMediaRouter } from "./social-media";
 
-// Configure OpenAI with proper error handling
+// Configure OpenAI with proper error handling and retries
 let openai: OpenAI | null = null;
 try {
-  if (process.env.OPENAI_API_KEY) {
+  if (!process.env.OPENAI_API_KEY) {
+    console.warn("OpenAI API key not found. AI features will be disabled.");
+  } else {
     openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
+      apiKey: process.env.OPENAI_API_KEY,
+      maxRetries: 3,
+      timeout: 30000,
     });
     console.log("OpenAI API initialized successfully");
-  } else {
-    console.warn("OpenAI API key not found. AI features will be disabled.");
   }
 } catch (error) {
   console.error("Failed to initialize OpenAI:", error);
@@ -37,31 +39,30 @@ export function registerRoutes(app: Express): Server {
     next();
   };
 
-  // Register social media routes with error handling and auth middleware
-  app.use('/api/social', authMiddleware, (req, res, next) => {
-    // Check for required environment variables
-    const requiredEnvVars = {
-      'Facebook': ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET'],
-      'Instagram': ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'],
-      'TikTok': ['TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET']
-    };
+  // WebSocket server for real-time updates with proper error handling
+  const wss = new WebSocketServer({ 
+    server: httpServer,
+    path: "/api/ws",
+    clientTracking: true,
+  });
 
-    const missingVars: string[] = [];
-    Object.entries(requiredEnvVars).forEach(([platform, vars]) => {
-      vars.forEach(varName => {
-        if (!process.env[varName]) {
-          missingVars.push(varName);
-        }
-      });
+  wss.on('error', (error) => {
+    console.error('WebSocket server error:', error);
+  });
+
+  // Clean up on server close
+  httpServer.on('close', () => {
+    wss.clients.forEach(client => {
+      try {
+        client.terminate();
+      } catch (error) {
+        console.error('Error terminating client:', error);
+      }
     });
+  });
 
-    if (missingVars.length > 0) {
-      console.warn(`Warning: Missing social media environment variables: ${missingVars.join(', ')}`);
-      // Continue with limited functionality instead of blocking the request
-    }
-
-    next();
-  }, socialMediaRouter);
+  // Register social media routes with error handling
+  app.use('/api/social', authMiddleware, socialMediaRouter);
 
   // Social media endpoints
   app.post("/api/social/posts", async (req, res) => {
@@ -175,40 +176,38 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-  // WebSocket server for real-time stock updates with proper error handling
-  const wss = new WebSocketServer({ 
-    server: httpServer,
-    path: "/api/ws",  // Specify a path to avoid conflicts with Vite HMR
-    clientTracking: true, // Enable client tracking for proper cleanup
+  // Stock data endpoints with error handling
+  app.get("/api/stocks/:symbol", async (req, res) => {
+    try {
+      const { symbol } = req.params;
+      // Simulated stock data for demo
+      const prices = Array.from({ length: 20 }, (_, i) => ({
+        timestamp: new Date(Date.now() - i * 86400000).toISOString(),
+        price: Math.random() * 100 + 100,
+        volume: Math.floor(Math.random() * 1000000),
+      }));
+
+      res.json({ symbol, prices });
+    } catch (error) {
+      console.error('Error fetching stock data:', error);
+      res.status(500).json({ error: "Failed to fetch stock data" });
+    }
   });
 
-  // Handle WebSocket server errors
-  wss.on('error', (error) => {
-    console.error('WebSocket server error:', error);
-  });
-
-  // Clean up on server close
-  httpServer.on('close', () => {
-    wss.clients.forEach(client => {
-      try {
-        client.terminate();
-      } catch (error) {
-        console.error('Error terminating client:', error);
-      }
-    });
-  });
-
+  // WebSocket connection handler for real-time updates
   wss.on("connection", (ws) => {
     console.log("New WebSocket connection established");
+    let heartbeatInterval: NodeJS.Timeout;
 
     ws.on("message", async (message) => {
       try {
         const data = JSON.parse(message.toString());
+
         if (data.type === "SUBSCRIBE_STOCK") {
           const { symbol } = data;
           console.log(`Client subscribed to stock: ${symbol}`);
 
-          // Simulate real-time stock updates
+          // Send periodic updates
           const interval = setInterval(() => {
             if (ws.readyState === ws.OPEN) {
               const price = Math.random() * 100 + 100;
@@ -225,6 +224,7 @@ export function registerRoutes(app: Express): Server {
             }
           }, 5000);
 
+          // Clean up on close
           ws.on("close", () => {
             clearInterval(interval);
             console.log(`Client unsubscribed from stock: ${symbol}`);
@@ -234,24 +234,17 @@ export function registerRoutes(app: Express): Server {
         console.error("WebSocket message error:", error);
       }
     });
-  });
 
-  // Stock data endpoints
-  app.get("/api/stocks/:symbol", async (req, res) => {
-    try {
-      const { symbol } = req.params;
-      // Simulated stock data
-      const prices = Array.from({ length: 20 }, (_, i) => ({
-        timestamp: new Date(Date.now() - i * 86400000).toISOString(),
-        price: Math.random() * 100 + 100,
-        volume: Math.floor(Math.random() * 1000000),
-      }));
+    // Setup heartbeat
+    heartbeatInterval = setInterval(() => {
+      if (ws.readyState === ws.OPEN) {
+        ws.ping();
+      }
+    }, 30000);
 
-      res.json({ symbol, prices });
-    } catch (error) {
-      console.error('Error fetching stock data:', error);
-      res.status(500).json({ error: "Failed to fetch stock data" });
-    }
+    ws.on("close", () => {
+      clearInterval(heartbeatInterval);
+    });
   });
 
   // AI insights endpoint with graceful degradation

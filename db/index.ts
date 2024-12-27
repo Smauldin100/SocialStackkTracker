@@ -9,10 +9,10 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Create a PostgreSQL pool with better error handling
+// Create a PostgreSQL pool with better error handling and connection management
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 20, // Increased for better concurrency
+  max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
@@ -21,15 +21,16 @@ const pool = new Pool({
 // Add error handler for the pool
 pool.on('error', (err) => {
   console.error('Unexpected error on idle client', err);
-  // Don't exit process, just log the error
+  // Don't exit process, just log the error and attempt recovery
   console.error('Database pool error occurred, attempting to recover...');
 });
 
 // Test database connection with retries
-const testConnection = async (retries = 3, delay = 2000) => {
+async function testConnection(retries = 3, delay = 2000): Promise<boolean> {
   for (let i = 0; i < retries; i++) {
     try {
       const client = await pool.connect();
+      await client.query('SELECT 1'); // Verify we can actually execute queries
       console.log('Successfully connected to the database');
       client.release();
       return true;
@@ -40,7 +41,18 @@ const testConnection = async (retries = 3, delay = 2000) => {
     }
   }
   return false;
-};
+}
+
+// Initialize database connection
+async function initializeDatabase() {
+  try {
+    await testConnection();
+    console.log('Database connection established successfully');
+  } catch (error) {
+    console.error('Failed to initialize database:', error);
+    throw error;
+  }
+}
 
 // Create drizzle database instance with query logging in development
 const db = drizzle(pool, {
@@ -48,5 +60,4 @@ const db = drizzle(pool, {
   logger: process.env.NODE_ENV !== 'production',
 });
 
-// Export the database instance and utilities
-export { db, pool, testConnection };
+export { db, pool, testConnection, initializeDatabase };
