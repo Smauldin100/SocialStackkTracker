@@ -9,55 +9,121 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Create a PostgreSQL pool with better error handling and connection management
+// Enhanced PostgreSQL pool configuration
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 20,
+  max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
-// Add error handler for the pool
+// Create drizzle instance with improved configuration
+export const db = drizzle(pool, {
+  schema,
+  logger: process.env.NODE_ENV !== 'production',
+});
+
+// Improved error handling for the connection pool
 pool.on('error', (err) => {
   console.error('Unexpected error on idle client', err);
-  // Don't exit process, just log the error and attempt recovery
-  console.error('Database pool error occurred, attempting to recover...');
+  console.warn('Database pool error occurred, attempting recovery...');
 });
 
-// Test database connection with retries
+pool.on('connect', (client) => {
+  client.on('error', (err) => {
+    console.error('Database client error:', err);
+  });
+});
+
+// Enhanced connection testing
 async function testConnection(retries = 3, delay = 2000): Promise<boolean> {
   for (let i = 0; i < retries; i++) {
+    let client;
     try {
-      const client = await pool.connect();
-      await client.query('SELECT 1'); // Verify we can actually execute queries
-      console.log('Successfully connected to the database');
-      client.release();
+      client = await pool.connect();
+      await client.query('SELECT current_timestamp');
+      console.log('Database connection successful');
       return true;
     } catch (err) {
       console.error(`Database connection attempt ${i + 1} failed:`, err);
       if (i === retries - 1) throw err;
       await new Promise(resolve => setTimeout(resolve, delay));
+    } finally {
+      if (client) {
+        try {
+          client.release(true);
+        } catch (releaseErr) {
+          console.error('Error releasing client:', releaseErr);
+        }
+      }
     }
   }
   return false;
 }
 
-// Initialize database connection
+// Enhanced database initialization
 async function initializeDatabase() {
   try {
+    console.log('Starting database initialization...');
+
+    // Test basic connection
     await testConnection();
-    console.log('Database connection established successfully');
+
+    // Verify schema access
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`
+        SELECT EXISTS (
+          SELECT 1 
+          FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'users'
+        );
+      `);
+      await client.query('COMMIT');
+      console.log('Schema verification successful');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Schema verification failed:', err);
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    // Test drizzle query
+    try {
+      await db.query.users.findMany({
+        limit: 1,
+      });
+      console.log('Drizzle ORM initialized successfully');
+    } catch (err) {
+      console.error('Drizzle initialization failed:', err);
+      throw err;
+    }
+
+    console.log('Database initialization completed successfully');
   } catch (error) {
-    console.error('Failed to initialize database:', error);
+    console.error('Database initialization failed:', error);
     throw error;
   }
 }
 
-// Create drizzle database instance with query logging in development
-const db = drizzle(pool, {
-  schema,
-  logger: process.env.NODE_ENV !== 'production',
-});
+// Cleanup handlers
+async function cleanupPool() {
+  try {
+    await pool.end();
+    console.log('Database pool closed successfully');
+  } catch (err) {
+    console.error('Error during pool cleanup:', err);
+    process.exit(1);
+  }
+}
 
-export { db, pool, testConnection, initializeDatabase };
+process.on('SIGINT', cleanupPool);
+process.on('SIGTERM', cleanupPool);
+
+export { pool, testConnection, initializeDatabase };
