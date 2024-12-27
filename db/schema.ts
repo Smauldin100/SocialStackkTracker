@@ -1,9 +1,9 @@
 import { pgTable, text, serial, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
-import { relations, type RelationConfig } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from 'zod';
 
-// Users table schema with enhanced profile fields
+// Users table schema with social media profile fields
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").unique().notNull(),
@@ -19,7 +19,7 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Posts table schema with enhanced engagement tracking
+// Posts table schema with social media engagement tracking
 export const posts = pgTable("posts", {
   id: serial("id").primaryKey(),
   content: text("content").notNull(),
@@ -43,7 +43,7 @@ export const comments = pgTable("comments", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Post reactions for detailed engagement tracking
+// Reactions table for social engagement tracking
 export const reactions = pgTable("reactions", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),

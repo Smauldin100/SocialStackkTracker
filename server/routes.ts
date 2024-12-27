@@ -3,7 +3,8 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { db } from "@db";
 import { posts, comments, users, reactions } from "@db/schema";
-import { eq, desc, and, isNull } from "drizzle-orm";
+import { eq, desc, and, isNull, sql } from "drizzle-orm";
+import { setupFacebookRoutes } from "./social-media/facebook";
 
 type UserType = typeof users.$inferSelect;
 
@@ -36,6 +37,9 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
+  // Social Media Platform Routes
+  setupFacebookRoutes(app);
+
   // Enhanced user profile endpoints
   app.put("/api/users/profile", authMiddleware, async (req, res) => {
     try {
@@ -59,7 +63,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Enhanced posts endpoints with reactions
+  // Posts endpoints with reactions
   app.post("/api/posts", authMiddleware, async (req, res) => {
     try {
       const { content, attachments } = req.body;
@@ -115,7 +119,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Enhanced comments with threading support
+  // Comments with threading support
   app.post("/api/posts/:postId/comments", authMiddleware, async (req, res) => {
     try {
       const { content, parentId } = req.body;
@@ -149,7 +153,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Reaction endpoints
+  // Reactions endpoints
   app.post("/api/reactions", authMiddleware, async (req, res) => {
     try {
       const { postId, commentId, type } = req.body;
@@ -164,16 +168,20 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      // Update counts
+      // Update counts using SQL increment
       if (postId) {
         await db
           .update(posts)
-          .set({ likesCount: posts.likesCount + 1 })
+          .set({ 
+            likesCount: sql`${posts.likesCount} + 1`
+          })
           .where(eq(posts.id, postId));
       } else if (commentId) {
         await db
           .update(comments)
-          .set({ likesCount: comments.likesCount + 1 })
+          .set({ 
+            likesCount: sql`${comments.likesCount} + 1`
+          })
           .where(eq(comments.id, commentId));
       }
 
@@ -206,12 +214,16 @@ export function registerRoutes(app: Express): Server {
       if (reaction.postId) {
         await db
           .update(posts)
-          .set({ likesCount: posts.likesCount - 1 })
+          .set({ 
+            likesCount: sql`${posts.likesCount} - 1`
+          })
           .where(eq(posts.id, reaction.postId));
       } else if (reaction.commentId) {
         await db
           .update(comments)
-          .set({ likesCount: comments.likesCount - 1 })
+          .set({ 
+            likesCount: sql`${comments.likesCount} - 1`
+          })
           .where(eq(comments.id, reaction.commentId));
       }
 
@@ -222,7 +234,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // User profile endpoint (original, kept for completeness if needed)
+  // User profile endpoint
   app.get("/api/users/:userId/profile", async (req, res) => {
     try {
       const userId = parseInt(req.params.userId);
@@ -234,6 +246,9 @@ export function registerRoutes(app: Express): Server {
           email: users.email,
           displayName: users.displayName,
           avatarUrl: users.avatarUrl,
+          bio: users.bio,
+          location: users.location,
+          socialLinks: users.socialLinks,
           createdAt: users.createdAt,
         })
         .from(users)
@@ -250,7 +265,6 @@ export function registerRoutes(app: Express): Server {
       res.status(500).json({ error: "Failed to fetch user profile" });
     }
   });
-
 
   return httpServer;
 }

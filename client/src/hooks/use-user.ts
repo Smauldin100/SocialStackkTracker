@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { InsertUser, SelectUser } from "@db/schema";
+import type { User, NewUser } from "@db/schema";
 
 type RequestResult = {
   ok: true;
@@ -43,7 +43,7 @@ async function handleRequest(
   }
 }
 
-async function fetchUser(): Promise<SelectUser | null> {
+async function fetchUser(): Promise<User | null> {
   console.log('Fetching user data...');
 
   const response = await fetch('/api/user', {
@@ -83,7 +83,7 @@ export interface RegisterCredentials extends LoginCredentials {
 export function useUser() {
   const queryClient = useQueryClient();
 
-  const { data: user, error, isLoading } = useQuery<SelectUser | null, Error>({
+  const { data: user, error, isLoading } = useQuery<User | null, Error>({
     queryKey: ['user'],
     queryFn: fetchUser,
     staleTime: Infinity,
@@ -91,9 +91,9 @@ export function useUser() {
   });
 
   const loginMutation = useMutation<RequestResult, Error, LoginCredentials>({
-    mutationFn: (credentials) => {
+    mutationFn: async (credentials) => {
       console.log('Attempting login...');
-      return handleRequest('/api/login', 'POST', credentials);
+      return handleRequest('/api/login', 'POST', credentials as Record<string, unknown>);
     },
     onSuccess: () => {
       console.log('Login successful, invalidating user query');
@@ -116,9 +116,9 @@ export function useUser() {
   });
 
   const registerMutation = useMutation<RequestResult, Error, RegisterCredentials>({
-    mutationFn: (userData) => {
+    mutationFn: async (userData) => {
       console.log('Attempting registration...');
-      return handleRequest('/api/register', 'POST', userData);
+      return handleRequest('/api/register', 'POST', userData as Record<string, unknown>);
     },
     onSuccess: () => {
       console.log('Registration successful, invalidating user query');

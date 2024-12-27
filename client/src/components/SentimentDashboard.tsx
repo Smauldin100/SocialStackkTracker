@@ -1,14 +1,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 
 interface SentimentData {
   positive: number;
   neutral: number;
   negative: number;
-  overallMood: number;
-  trendingTopics: string[];
+  trending: {
+    topic: string;
+    volume: number;
+  }[];
+  platforms: {
+    name: string;
+    sentiment: number;
+    posts: number;
+  }[];
 }
 
 interface SentimentDashboardProps {
@@ -34,8 +41,8 @@ export function SentimentDashboard({ data, isLoading }: SentimentDashboardProps)
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5" />
-            Sentiment Analysis
+            <MessageSquare className="h-5 w-5" />
+            Social Media Sentiment
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -44,7 +51,7 @@ export function SentimentDashboard({ data, isLoading }: SentimentDashboardProps)
               animate={{ rotate: 360 }}
               transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
             >
-              <Brain className="h-8 w-8 text-primary" />
+              <MessageSquare className="h-8 w-8 text-primary" />
             </motion.div>
           </div>
         </CardContent>
@@ -63,8 +70,8 @@ export function SentimentDashboard({ data, isLoading }: SentimentDashboardProps)
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Brain className="h-5 w-5" />
-              Sentiment Analysis
+              <MessageSquare className="h-5 w-5" />
+              Social Media Sentiment
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -94,29 +101,47 @@ export function SentimentDashboard({ data, isLoading }: SentimentDashboardProps)
               </div>
               <div className="space-y-4">
                 <div>
-                  <h3 className="font-semibold mb-2">Overall Mood</h3>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <motion.div
-                      className="h-full bg-primary"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${data.overallMood * 100}%` }}
-                      transition={{ duration: 1, ease: "easeOut" }}
-                    />
-                  </div>
-                </div>
-                <div>
                   <h3 className="font-semibold mb-2">Trending Topics</h3>
                   <div className="flex flex-wrap gap-2">
-                    {data.trendingTopics.map((topic, index) => (
+                    {data.trending.map((topic, index) => (
                       <motion.span
-                        key={topic}
-                        className="px-2 py-1 bg-primary/10 rounded-full text-sm"
+                        key={topic.topic}
+                        className="px-2 py-1 bg-primary/10 rounded-full text-sm flex items-center gap-1"
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: index * 0.1 }}
                       >
-                        {topic}
+                        <span>{topic.topic}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({topic.volume})
+                        </span>
                       </motion.span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-semibold mb-2">Platform Analysis</h3>
+                  <div className="space-y-2">
+                    {data.platforms.map((platform) => (
+                      <div 
+                        key={platform.name}
+                        className="flex items-center justify-between"
+                      >
+                        <span className="text-sm">{platform.name}</span>
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-muted-foreground">
+                            {platform.posts} posts
+                          </span>
+                          <div className="h-2 w-24 bg-muted rounded-full overflow-hidden">
+                            <motion.div
+                              className="h-full bg-primary"
+                              initial={{ width: 0 }}
+                              animate={{ width: `${platform.sentiment * 100}%` }}
+                              transition={{ duration: 1, ease: "easeOut" }}
+                            />
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>

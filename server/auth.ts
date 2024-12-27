@@ -29,9 +29,7 @@ const crypto = {
 type UserType = typeof users.$inferSelect;
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
-    // eslint-disable-next-line @typescript-eslint/no-empty-interface
     interface User extends UserType {}
   }
 }
@@ -76,6 +74,7 @@ export function setupAuth(app: Express) {
 
         return done(null, user);
       } catch (error) {
+        console.error("Authentication error:", error);
         return done(error);
       }
     })
@@ -99,11 +98,12 @@ export function setupAuth(app: Express) {
 
       done(null, user);
     } catch (error) {
+      console.error("Deserialization error:", error);
       done(error);
     }
   });
 
-  app.post("/api/register", async (req, res) => {
+  app.post("/api/auth/register", async (req, res) => {
     try {
       const { username, password, email, displayName } = req.body;
 
@@ -140,9 +140,10 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/login", (req, res, next) => {
+  app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: UserType | false, info: IVerifyOptions) => {
       if (err) {
+        console.error("Login error:", err);
         return next(err);
       }
       if (!user) {
@@ -150,6 +151,7 @@ export function setupAuth(app: Express) {
       }
       req.logIn(user, (err) => {
         if (err) {
+          console.error("Login session error:", err);
           return next(err);
         }
         return res.json({
@@ -162,17 +164,17 @@ export function setupAuth(app: Express) {
     })(req, res, next);
   });
 
-  app.post("/api/logout", (req, res) => {
+  app.post("/api/auth/logout", (req, res) => {
     req.logout(() => {
       res.json({ message: "Logged out successfully" });
     });
   });
 
-  app.get("/api/me", (req, res) => {
+  app.get("/api/auth/me", (req, res) => {
     if (!req.user) {
       return res.status(401).json({ message: "Not authenticated" });
     }
-    const { id, username, email, displayName } = req.user;
-    res.json({ id, username, email, displayName });
+    const { id, username, email, displayName, bio, location, socialLinks } = req.user;
+    res.json({ id, username, email, displayName, bio, location, socialLinks });
   });
 }
