@@ -2,9 +2,11 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { db } from "@db";
-import { posts, comments, users, reactions } from "@db/schema";
-import { eq, desc, and, isNull } from "drizzle-orm";
+import { posts, comments, users, socialAccounts } from "@db/schema";
+import { eq, desc, and } from "drizzle-orm";
 import { setupFacebookRoutes } from "./social-media/facebook";
+import { setupInstagramRoutes } from "./social-media/instagram";
+import { setupTikTokRoutes } from "./social-media/tiktok";
 
 type UserType = typeof users.$inferSelect;
 
@@ -37,27 +39,34 @@ export function registerRoutes(app: Express): Server {
     next();
   };
 
+  // Social Media Platform Routes
+  setupFacebookRoutes(app);
+  setupInstagramRoutes(app);
+  setupTikTokRoutes(app);
+
   // Social metrics endpoint
   app.get("/api/social-metrics", authMiddleware, async (req, res) => {
     try {
       const userId = (req.user as UserType).id;
 
-      // Get total posts
-      const totalPosts = await db.query.posts.findMany({
-        where: eq(posts.authorId, userId)
+      // Get user's social accounts
+      const userAccounts = await db.query.socialAccounts.findMany({
+        where: eq(socialAccounts.userId, userId),
+        with: {
+          posts: true,
+        }
       });
 
-      // Get total reactions
-      const totalReactions = await db.query.reactions.findMany({
-        where: eq(reactions.userId, userId)
-      });
-
-      // Calculate metrics
+      // Calculate total metrics across all platforms
       const metrics = {
-        totalEngagements: totalReactions.length,
-        totalFollowers: Math.floor(Math.random() * 1000), // Mock data
-        averageEngagement: `${((totalReactions.length / Math.max(totalPosts.length, 1)) * 100).toFixed(1)}%`,
-        scheduledPosts: 0 // To be implemented with scheduling feature
+        totalAccounts: userAccounts.length,
+        totalPosts: userAccounts.reduce((acc, account) => acc + account.posts.length, 0),
+        platformMetrics: userAccounts.map(account => ({
+          platform: account.platform,
+          isActive: account.isActive,
+          username: account.platformUsername,
+          posts: account.posts.length,
+        }))
       };
 
       res.json(metrics);
@@ -67,10 +76,140 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Social Media Platform Routes
-  setupFacebookRoutes(app);
+  // Posts endpoints
+  app.post("/api/posts", authMiddleware, async (req, res) => {
+    try {
+      const { content, platform, mediaUrls, scheduledFor } = req.body;
+      const userId = (req.user as UserType).id;
 
-  // Enhanced user profile endpoints
+      // Find the user's account for the specified platform
+      const [account] = await db
+        .select()
+        .from(socialAccounts)
+        .where(and(
+          eq(socialAccounts.userId, userId),
+          eq(socialAccounts.platform, platform),
+          eq(socialAccounts.isActive, true)
+        ))
+        .limit(1);
+
+      if (!account) {
+        return res.status(404).json({ error: `No active ${platform} account found` });
+      }
+
+      const [post] = await db
+        .insert(posts)
+        .values({
+          userId,
+          socialAccountId: account.id,
+          content,
+          platform,
+          mediaUrls: mediaUrls || null,
+          scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
+          status: scheduledFor ? 'scheduled' : 'draft'
+        })
+        .returning();
+
+      // Notify connected clients about new post
+      const message = JSON.stringify({ type: 'NEW_POST', post });
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
+
+      res.json(post);
+    } catch (error) {
+      console.error('Error creating post:', error);
+      res.status(500).json({ error: "Failed to create post" });
+    }
+  });
+
+  // Get posts with comments
+  app.get("/api/posts", authMiddleware, async (req, res) => {
+    try {
+      const userId = (req.user as UserType).id;
+      const { platform } = req.query;
+
+      const query = {
+        where: platform ? 
+          and(
+            eq(posts.userId, userId),
+            eq(posts.platform, platform as string)
+          ) : 
+          eq(posts.userId, userId),
+        orderBy: [desc(posts.createdAt)],
+        with: {
+          comments: {
+            with: {
+              user: true,
+            },
+            orderBy: [desc(comments.createdAt)],
+          },
+          socialAccount: true,
+        },
+      };
+
+      const userPosts = await db.query.posts.findMany(query);
+      res.json(userPosts);
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+      res.status(500).json({ error: "Failed to fetch posts" });
+    }
+  });
+
+  // Comments endpoints
+  app.post("/api/posts/:postId/comments", authMiddleware, async (req, res) => {
+    try {
+      const { content } = req.body;
+      const postId = parseInt(req.params.postId);
+      const userId = (req.user as UserType).id;
+
+      if (!content?.trim()) {
+        return res.status(400).json({ error: "Content is required" });
+      }
+
+      const [comment] = await db
+        .insert(comments)
+        .values({
+          userId,
+          postId,
+          content: content.trim(),
+        })
+        .returning();
+
+      const message = JSON.stringify({ type: 'NEW_COMMENT', comment });
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
+
+      res.json(comment);
+    } catch (error) {
+      console.error('Error creating comment:', error);
+      res.status(500).json({ error: "Failed to create comment" });
+    }
+  });
+
+  // Connected accounts endpoint
+  app.get("/api/connected-accounts", authMiddleware, async (req, res) => {
+    try {
+      const userId = (req.user as UserType).id;
+
+      const accounts = await db.query.socialAccounts.findMany({
+        where: eq(socialAccounts.userId, userId),
+        orderBy: [desc(socialAccounts.createdAt)],
+      });
+
+      res.json(accounts);
+    } catch (error) {
+      console.error('Error fetching connected accounts:', error);
+      res.status(500).json({ error: "Failed to fetch connected accounts" });
+    }
+  });
+
+  // Enhanced user profile endpoints (from original code)
   app.put("/api/users/profile", authMiddleware, async (req, res) => {
     try {
       const { bio, location, socialLinks, displayName } = req.body;
@@ -93,178 +232,8 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Posts endpoints
-  app.post("/api/posts", authMiddleware, async (req, res) => {
-    try {
-      const { content } = req.body;
-      if (!content?.trim()) {
-        return res.status(400).json({ error: "Content is required" });
-      }
 
-      const [post] = await db
-        .insert(posts)
-        .values({
-          authorId: (req.user as UserType).id,
-          content: content.trim(),
-        })
-        .returning();
-
-      // Notify connected clients about new post
-      const message = JSON.stringify({ type: 'NEW_POST', post });
-      wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(message);
-        }
-      });
-
-      res.json(post);
-    } catch (error) {
-      console.error('Error creating post:', error);
-      res.status(500).json({ error: "Failed to create post" });
-    }
-  });
-
-  // Get posts with comments and reactions
-  app.get("/api/posts", async (req, res) => {
-    try {
-      const allPosts = await db.query.posts.findMany({
-        orderBy: [desc(posts.createdAt)],
-        with: {
-          author: true,
-          comments: {
-            where: isNull(comments.parentId),
-            with: {
-              author: true,
-              reactions: true,
-            },
-            orderBy: [desc(comments.createdAt)],
-          },
-          reactions: true,
-        },
-      });
-      res.json(allPosts);
-    } catch (error) {
-      console.error('Error fetching posts:', error);
-      res.status(500).json({ error: "Failed to fetch posts" });
-    }
-  });
-
-  // Comments endpoints
-  app.post("/api/posts/:postId/comments", authMiddleware, async (req, res) => {
-    try {
-      const { content, parentId } = req.body;
-      const postId = parseInt(req.params.postId);
-
-      if (!content?.trim()) {
-        return res.status(400).json({ error: "Content is required" });
-      }
-
-      const [comment] = await db
-        .insert(comments)
-        .values({
-          postId,
-          authorId: (req.user as UserType).id,
-          content: content.trim(),
-          parentId: parentId || null,
-        })
-        .returning();
-
-      const message = JSON.stringify({ type: 'NEW_COMMENT', comment });
-      wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(message);
-        }
-      });
-
-      res.json(comment);
-    } catch (error) {
-      console.error('Error creating comment:', error);
-      res.status(500).json({ error: "Failed to create comment" });
-    }
-  });
-
-  // Reactions endpoints
-  app.post("/api/reactions", authMiddleware, async (req, res) => {
-    try {
-      const { postId, commentId, type } = req.body;
-
-      const [reaction] = await db
-        .insert(reactions)
-        .values({
-          userId: (req.user as UserType).id,
-          postId: postId || null,
-          commentId: commentId || null,
-          type,
-        })
-        .returning();
-
-      // Update counts using SQL increment
-      if (postId) {
-        await db
-          .update(posts)
-          .set({ 
-            likesCount: sql`${posts.likesCount} + 1`
-          })
-          .where(eq(posts.id, postId));
-      } else if (commentId) {
-        await db
-          .update(comments)
-          .set({ 
-            likesCount: sql`${comments.likesCount} + 1`
-          })
-          .where(eq(comments.id, commentId));
-      }
-
-      const message = JSON.stringify({ type: 'NEW_REACTION', reaction });
-      wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(message);
-        }
-      });
-
-      res.json(reaction);
-    } catch (error) {
-      console.error('Error creating reaction:', error);
-      res.status(500).json({ error: "Failed to create reaction" });
-    }
-  });
-
-  // Delete reaction
-  app.delete("/api/reactions/:reactionId", authMiddleware, async (req, res) => {
-    try {
-      const reactionId = parseInt(req.params.reactionId);
-      const [reaction] = await db
-        .delete(reactions)
-        .where(and(
-          eq(reactions.id, reactionId),
-          eq(reactions.userId, (req.user as UserType).id)
-        ))
-        .returning();
-
-      if (reaction.postId) {
-        await db
-          .update(posts)
-          .set({ 
-            likesCount: sql`${posts.likesCount} - 1`
-          })
-          .where(eq(posts.id, reaction.postId));
-      } else if (reaction.commentId) {
-        await db
-          .update(comments)
-          .set({ 
-            likesCount: sql`${comments.likesCount} - 1`
-          })
-          .where(eq(comments.id, reaction.commentId));
-      }
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error deleting reaction:', error);
-      res.status(500).json({ error: "Failed to delete reaction" });
-    }
-  });
-
-  // User profile endpoint
+  // User profile endpoint (from original code)
   app.get("/api/users/:userId/profile", async (req, res) => {
     try {
       const userId = parseInt(req.params.userId);
