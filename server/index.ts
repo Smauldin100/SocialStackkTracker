@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { initializeDatabase } from "@db";
@@ -9,22 +8,30 @@ const app = express();
 // Basic middleware setup
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cors({
-  origin: true,
-  credentials: true,
-}));
 
 // Simple request logging
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
 
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      console.log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) {
+        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      }
+      console.log(logLine);
     }
   });
+
   next();
 });
 
@@ -32,13 +39,14 @@ app.use((req, res, next) => {
 app.get('/health', async (_, res) => {
   try {
     await initializeDatabase();
-    res.json({ status: 'ok', timestamp: new Date().toISOString(), database: 'connected' });
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
   } catch (error) {
-    res.status(503).json({ status: 'error', message: 'Service unavailable', database: 'disconnected' });
+    console.error('Health check failed:', error);
+    res.status(503).json({ status: 'error', message: 'Service unavailable' });
   }
 });
 
-// Simple error handling middleware
+// Error handling middleware
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Server error:', err);
   const status = err.status || err.statusCode || 500;

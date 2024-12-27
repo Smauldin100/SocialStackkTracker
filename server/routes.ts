@@ -1,10 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
+import type { WebSocket } from "ws";
 import { db } from "@db";
-import { posts, comments, follows, users } from "@db/schema";
-import { eq, desc, and } from "drizzle-orm";
-import { sql } from 'drizzle-orm';
+import { posts, comments, users } from "@db/schema";
+import { eq, desc } from "drizzle-orm";
 
 type UserType = typeof users.$inferSelect;
 
@@ -22,7 +22,14 @@ export function registerRoutes(app: Express): Server {
   // WebSocket server for real-time updates
   const wss = new WebSocketServer({ 
     server: httpServer,
-    path: "/api/ws",
+    path: "/api/ws"
+  });
+
+  wss.on('connection', (ws: WebSocket) => {
+    console.log('New WebSocket connection established');
+
+    ws.on('error', console.error);
+    ws.on('close', () => console.log('Client disconnected'));
   });
 
   // Posts endpoints
@@ -30,18 +37,32 @@ export function registerRoutes(app: Express): Server {
     try {
       const { content } = req.body;
       if (!content?.trim()) {
-        return res.status(400).send("Content is required");
+        return res.status(400).json({ error: "Content is required" });
       }
 
       const [post] = await db
         .insert(posts)
         .values({
           authorId: (req.user as UserType).id,
-          content,
+          content: content.trim(),
         })
         .returning();
 
-      res.json(post);
+      // Notify connected clients about new post
+      const postWithAuthor = await db.query.posts.findFirst({
+        where: eq(posts.id, post.id),
+        with: {
+          author: true,
+        },
+      });
+
+      wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'NEW_POST', post: postWithAuthor }));
+        }
+      });
+
+      res.json(postWithAuthor);
     } catch (error) {
       console.error('Error creating post:', error);
       res.status(500).json({ error: "Failed to create post" });
@@ -58,6 +79,7 @@ export function registerRoutes(app: Express): Server {
             with: {
               author: true,
             },
+            orderBy: [desc(comments.createdAt)],
           },
         },
       });
@@ -75,7 +97,7 @@ export function registerRoutes(app: Express): Server {
       const postId = parseInt(req.params.postId);
 
       if (!content?.trim()) {
-        return res.status(400).send("Content is required");
+        return res.status(400).json({ error: "Content is required" });
       }
 
       const [comment] = await db
@@ -83,58 +105,28 @@ export function registerRoutes(app: Express): Server {
         .values({
           postId,
           authorId: (req.user as UserType).id,
-          content,
+          content: content.trim(),
         })
         .returning();
 
-      res.json(comment);
+      const commentWithAuthor = await db.query.comments.findFirst({
+        where: eq(comments.id, comment.id),
+        with: {
+          author: true,
+        },
+      });
+
+      // Notify connected clients about new comment
+      wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'NEW_COMMENT', comment: commentWithAuthor }));
+        }
+      });
+
+      res.json(commentWithAuthor);
     } catch (error) {
       console.error('Error creating comment:', error);
       res.status(500).json({ error: "Failed to create comment" });
-    }
-  });
-
-  // Follow/Unfollow endpoints
-  app.post("/api/users/:userId/follow", authMiddleware, async (req, res) => {
-    try {
-      const followingId = parseInt(req.params.userId);
-      const followerId = (req.user as UserType).id;
-
-      if (followerId === followingId) {
-        return res.status(400).json({ error: "Cannot follow yourself" });
-      }
-
-      const [follow] = await db
-        .insert(follows)
-        .values({
-          followerId,
-          followingId,
-        })
-        .returning();
-
-      res.json(follow);
-    } catch (error) {
-      console.error('Error following user:', error);
-      res.status(500).json({ error: "Failed to follow user" });
-    }
-  });
-
-  app.delete("/api/users/:userId/follow", authMiddleware, async (req, res) => {
-    try {
-      const followingId = parseInt(req.params.userId);
-      const followerId = (req.user as UserType).id;
-
-      await db
-        .delete(follows)
-        .where(and(
-          eq(follows.followerId, followerId),
-          eq(follows.followingId, followingId)
-        ));
-
-      res.json({ message: "Unfollowed successfully" });
-    } catch (error) {
-      console.error('Error unfollowing user:', error);
-      res.status(500).json({ error: "Failed to unfollow user" });
     }
   });
 
@@ -160,65 +152,11 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ error: "User not found" });
       }
 
-      const [{ count: followersCount }] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(follows)
-        .where(eq(follows.followingId, userId));
-
-      const [{ count: followingCount }] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(follows)
-        .where(eq(follows.followerId, userId));
-
-      res.json({
-        ...user,
-        followersCount,
-        followingCount,
-      });
+      res.json(user);
     } catch (error) {
       console.error('Error fetching user profile:', error);
       res.status(500).json({ error: "Failed to fetch user profile" });
     }
-  });
-
-  // Real-time updates via WebSocket
-  wss.on("connection", (ws) => {
-    console.log("New WebSocket connection established");
-
-    ws.on("message", async (message) => {
-      try {
-        const data = JSON.parse(message.toString());
-
-        // Handle different types of real-time updates
-        switch (data.type) {
-          case "NEW_POST":
-            // Broadcast new post to all connected clients
-            wss.clients.forEach((client) => {
-              if (client !== ws && client.readyState === ws.OPEN) {
-                client.send(JSON.stringify({
-                  type: "NEW_POST",
-                  post: data.post
-                }));
-              }
-            });
-            break;
-
-          case "NEW_COMMENT":
-            // Broadcast new comment to all connected clients
-            wss.clients.forEach((client) => {
-              if (client !== ws && client.readyState === ws.OPEN) {
-                client.send(JSON.stringify({
-                  type: "NEW_COMMENT",
-                  comment: data.comment
-                }));
-              }
-            });
-            break;
-        }
-      } catch (error) {
-        console.error("WebSocket message error:", error);
-      }
-    });
   });
 
   return httpServer;
