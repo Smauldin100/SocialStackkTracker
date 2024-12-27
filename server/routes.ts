@@ -26,11 +26,19 @@ try {
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
-  // Set up authentication routes
+  // Set up authentication routes first
   setupAuth(app);
 
-  // Register social media routes with error handling
-  app.use('/api/social', (req, res, next) => {
+  // Add authentication check middleware for protected routes
+  const authMiddleware = (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    next();
+  };
+
+  // Register social media routes with error handling and auth middleware
+  app.use('/api/social', authMiddleware, (req, res, next) => {
     // Check for required environment variables
     const requiredEnvVars = {
       'Facebook': ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET'],
@@ -49,6 +57,7 @@ export function registerRoutes(app: Express): Server {
 
     if (missingVars.length > 0) {
       console.warn(`Warning: Missing social media environment variables: ${missingVars.join(', ')}`);
+      // Continue with limited functionality instead of blocking the request
     }
 
     next();
@@ -166,10 +175,27 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-  // WebSocket server for real-time stock updates
+  // WebSocket server for real-time stock updates with proper error handling
   const wss = new WebSocketServer({ 
     server: httpServer,
-    path: "/api/ws"  // Specify a path to avoid conflicts with Vite HMR
+    path: "/api/ws",  // Specify a path to avoid conflicts with Vite HMR
+    clientTracking: true, // Enable client tracking for proper cleanup
+  });
+
+  // Handle WebSocket server errors
+  wss.on('error', (error) => {
+    console.error('WebSocket server error:', error);
+  });
+
+  // Clean up on server close
+  httpServer.on('close', () => {
+    wss.clients.forEach(client => {
+      try {
+        client.terminate();
+      } catch (error) {
+        console.error('Error terminating client:', error);
+      }
+    });
   });
 
   wss.on("connection", (ws) => {
