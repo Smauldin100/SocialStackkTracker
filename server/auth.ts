@@ -9,13 +9,29 @@ import { users, insertUserSchema, type User as SelectUser } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 
+/**
+ * Cryptographic utilities for password hashing and verification
+ * Uses scrypt for secure password hashing with salt
+ */
 const scryptAsync = promisify(scrypt);
 const crypto = {
+  /**
+   * Hash a password using scrypt with a random salt
+   * @param {string} password - The plain text password to hash
+   * @returns {Promise<string>} The hashed password with salt, format: 'hash.salt'
+   */
   hash: async (password: string) => {
     const salt = randomBytes(16).toString("hex");
     const buf = (await scryptAsync(password, salt, 64)) as Buffer;
     return `${buf.toString("hex")}.${salt}`;
   },
+
+  /**
+   * Compare a supplied password against a stored hash
+   * @param {string} suppliedPassword - The password to verify
+   * @param {string} storedPassword - The stored hash.salt combination
+   * @returns {Promise<boolean>} True if passwords match
+   */
   compare: async (suppliedPassword: string, storedPassword: string) => {
     const [hashedPassword, salt] = storedPassword.split(".");
     const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
@@ -28,13 +44,20 @@ const crypto = {
   },
 };
 
+// Type declaration for Express User
 declare global {
   namespace Express {
     interface User extends SelectUser {}
   }
 }
 
+/**
+ * Configure authentication middleware and routes
+ * Sets up Passport.js with local strategy and session management
+ * @param {Express} app - Express application instance
+ */
 export function setupAuth(app: Express) {
+  // Initialize session store
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
@@ -50,14 +73,17 @@ export function setupAuth(app: Express) {
     }),
   };
 
+  // Production settings
   if (app.get("env") === "production") {
     app.set("trust proxy", 1);
   }
 
+  // Set up middleware
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // Configure Passport local strategy
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
@@ -89,6 +115,7 @@ export function setupAuth(app: Express) {
     })
   );
 
+  // Session serialization
   passport.serializeUser((user, done) => {
     done(null, user.id);
   });
@@ -113,6 +140,13 @@ export function setupAuth(app: Express) {
     }
   });
 
+  /**
+   * User Registration Endpoint
+   * Creates a new user account with hashed password
+   * @route POST /api/register
+   * @param {Object} req.body - Registration data (username, password, email)
+   * @returns {Object} New user data or error message
+   */
   app.post("/api/register", async (req, res, next) => {
     try {
       console.log('Registration attempt:', req.body);
@@ -126,7 +160,7 @@ export function setupAuth(app: Express) {
 
       const { username, password, email } = result.data;
 
-      // Check if user already exists
+      // Check for existing user
       const [existingUser] = await db
         .select()
         .from(users)
@@ -138,10 +172,8 @@ export function setupAuth(app: Express) {
         return res.status(400).send("Username already exists");
       }
 
-      // Hash the password
+      // Create new user with hashed password
       const hashedPassword = await crypto.hash(password);
-
-      // Create the new user
       const [newUser] = await db
         .insert(users)
         .values({
@@ -154,6 +186,7 @@ export function setupAuth(app: Express) {
 
       console.log(`User registered successfully: ${username}`);
 
+      // Auto-login after registration
       req.login(newUser, (err) => {
         if (err) {
           console.error('Auto-login after registration failed:', err);
@@ -170,6 +203,13 @@ export function setupAuth(app: Express) {
     }
   });
 
+  /**
+   * User Login Endpoint
+   * Authenticates user credentials
+   * @route POST /api/login
+   * @param {Object} req.body - Login credentials (username, password)
+   * @returns {Object} User data or error message
+   */
   app.post("/api/login", (req, res, next) => {
     console.log('Login attempt:', { username: req.body.username });
 
@@ -199,6 +239,12 @@ export function setupAuth(app: Express) {
     })(req, res, next);
   });
 
+  /**
+   * User Logout Endpoint
+   * Ends user session
+   * @route POST /api/logout
+   * @returns {Object} Success message
+   */
   app.post("/api/logout", (req, res) => {
     const username = req.user?.username;
     req.logout((err) => {
@@ -211,6 +257,12 @@ export function setupAuth(app: Express) {
     });
   });
 
+  /**
+   * Get Current User Endpoint
+   * Returns current authenticated user's data
+   * @route GET /api/user
+   * @returns {Object} User data or unauthorized status
+   */
   app.get("/api/user", (req, res) => {
     if (req.isAuthenticated()) {
       const { id, username, email } = req.user;

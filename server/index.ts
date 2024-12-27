@@ -32,9 +32,9 @@ app.use((req, res, next) => {
 app.get('/health', async (_, res) => {
   try {
     await initializeDatabase();
-    res.json({ status: 'ok', timestamp: new Date().toISOString(), database: 'connected' }); //Added database status back for completeness.
+    res.json({ status: 'ok', timestamp: new Date().toISOString(), database: 'connected' });
   } catch (error) {
-    res.status(503).json({ status: 'error', message: 'Service unavailable', database: 'disconnected' }); //Added database status back for completeness.
+    res.status(503).json({ status: 'error', message: 'Service unavailable', database: 'disconnected' });
   }
 });
 
@@ -50,7 +50,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   try {
     console.log("Starting server initialization...");
 
-    // Initialize database
+    // Initialize database first
     await initializeDatabase();
     console.log("Database initialization successful");
 
