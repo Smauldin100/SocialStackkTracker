@@ -1,27 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
-import OpenAI from "openai";
 import { db } from "@db";
-import { posts } from "@db/schema";
-import { eq, desc, sql } from "drizzle-orm";
-import { setupAuth } from "./auth";
-import { socialMediaRouter } from "./social-media";
-
-// Configure OpenAI
-let openai: OpenAI | null = null;
-try {
-  if (!process.env.OPENAI_API_KEY) {
-    console.warn("OpenAI API key not found. AI features will be disabled.");
-  } else {
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-    console.log("OpenAI API initialized successfully");
-  }
-} catch (error) {
-  console.error("Failed to initialize OpenAI:", error);
-}
+import { posts, comments, follows, users } from "@db/schema";
+import { eq, desc, and } from "drizzle-orm";
+import { sql } from 'drizzle-orm';
 
 export function registerRoutes(app: Express): Server {
   // Create HTTP server
@@ -35,19 +18,16 @@ export function registerRoutes(app: Express): Server {
     next();
   };
 
-  // WebSocket server setup
+  // WebSocket server for real-time updates
   const wss = new WebSocketServer({ 
     server: httpServer,
     path: "/api/ws",
   });
 
-  // Register social media routes
-  app.use('/api/social', authMiddleware, socialMediaRouter);
-
-  // Social media endpoints
-  app.post("/api/social/posts", authMiddleware, async (req, res) => {
+  // Posts endpoints
+  app.post("/api/posts", authMiddleware, async (req, res) => {
     try {
-      const { content } = req.body;
+      const { content, mediaUrls } = req.body;
       if (!content?.trim()) {
         return res.status(400).send("Content is required");
       }
@@ -57,6 +37,7 @@ export function registerRoutes(app: Express): Server {
         .values({
           userId: req.user!.id,
           content,
+          mediaUrls: mediaUrls || [],
         })
         .returning();
 
@@ -67,34 +48,173 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // WebSocket connection handler
+  app.get("/api/posts", async (req, res) => {
+    try {
+      const allPosts = await db.query.posts.findMany({
+        orderBy: [desc(posts.createdAt)],
+        with: {
+          user: true,
+          comments: {
+            with: {
+              user: true,
+            },
+          },
+        },
+      });
+      res.json(allPosts);
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+      res.status(500).json({ error: "Failed to fetch posts" });
+    }
+  });
+
+  // Comments endpoints
+  app.post("/api/posts/:postId/comments", authMiddleware, async (req, res) => {
+    try {
+      const { content } = req.body;
+      const postId = parseInt(req.params.postId);
+
+      if (!content?.trim()) {
+        return res.status(400).send("Content is required");
+      }
+
+      const [comment] = await db
+        .insert(comments)
+        .values({
+          postId,
+          userId: req.user!.id,
+          content,
+        })
+        .returning();
+
+      res.json(comment);
+    } catch (error) {
+      console.error('Error creating comment:', error);
+      res.status(500).json({ error: "Failed to create comment" });
+    }
+  });
+
+  // Follow/Unfollow endpoints
+  app.post("/api/users/:userId/follow", authMiddleware, async (req, res) => {
+    try {
+      const followingId = parseInt(req.params.userId);
+      const followerId = req.user!.id;
+
+      if (followerId === followingId) {
+        return res.status(400).json({ error: "Cannot follow yourself" });
+      }
+
+      const [follow] = await db
+        .insert(follows)
+        .values({
+          followerId,
+          followingId,
+        })
+        .returning();
+
+      res.json(follow);
+    } catch (error) {
+      console.error('Error following user:', error);
+      res.status(500).json({ error: "Failed to follow user" });
+    }
+  });
+
+  app.delete("/api/users/:userId/follow", authMiddleware, async (req, res) => {
+    try {
+      const followingId = parseInt(req.params.userId);
+      const followerId = req.user!.id;
+
+      await db
+        .delete(follows)
+        .where(and(
+          eq(follows.followerId, followerId),
+          eq(follows.followingId, followingId)
+        ));
+
+      res.json({ message: "Unfollowed successfully" });
+    } catch (error) {
+      console.error('Error unfollowing user:', error);
+      res.status(500).json({ error: "Failed to unfollow user" });
+    }
+  });
+
+  // User profile endpoint
+  app.get("/api/users/:userId/profile", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+
+      const [user] = await db
+        .select({
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          displayName: users.displayName,
+          bio: users.bio,
+          avatarUrl: users.avatarUrl,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const [{ count: followersCount }] = await db
+        .select({ count: sql`count(*)::int` })
+        .from(follows)
+        .where(eq(follows.followingId, userId));
+
+      const [{ count: followingCount }] = await db
+        .select({ count: sql`count(*)::int` })
+        .from(follows)
+        .where(eq(follows.followerId, userId));
+
+      res.json({
+        ...user,
+        followersCount,
+        followingCount,
+      });
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      res.status(500).json({ error: "Failed to fetch user profile" });
+    }
+  });
+
+  // Real-time updates via WebSocket
   wss.on("connection", (ws) => {
     console.log("New WebSocket connection established");
 
-    ws.on("message", (message) => {
+    ws.on("message", async (message) => {
       try {
         const data = JSON.parse(message.toString());
-        if (data.type === "SUBSCRIBE_STOCK") {
-          const { symbol } = data;
-          console.log(`Client subscribed to stock: ${symbol}`);
 
-          // Send periodic updates
-          const interval = setInterval(() => {
-            if (ws.readyState === ws.OPEN) {
-              ws.send(JSON.stringify({
-                type: "STOCK_UPDATE",
-                symbol,
-                data: {
-                  price: Math.random() * 100 + 100,
-                  timestamp: new Date().toISOString()
-                }
-              }));
-            } else {
-              clearInterval(interval);
-            }
-          }, 5000);
+        // Handle different types of real-time updates
+        switch (data.type) {
+          case "NEW_POST":
+            // Broadcast new post to all connected clients
+            wss.clients.forEach((client) => {
+              if (client !== ws && client.readyState === ws.OPEN) {
+                client.send(JSON.stringify({
+                  type: "NEW_POST",
+                  post: data.post
+                }));
+              }
+            });
+            break;
 
-          ws.on("close", () => clearInterval(interval));
+          case "NEW_COMMENT":
+            // Broadcast new comment to all connected clients
+            wss.clients.forEach((client) => {
+              if (client !== ws && client.readyState === ws.OPEN) {
+                client.send(JSON.stringify({
+                  type: "NEW_COMMENT",
+                  comment: data.comment
+                }));
+              }
+            });
+            break;
         }
       } catch (error) {
         console.error("WebSocket message error:", error);
