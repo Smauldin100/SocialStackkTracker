@@ -2,6 +2,7 @@
 run = "npm run dev"
 hidden = [".config", "package-lock.json"]
 entrypoint = "server/index.ts"
+modules = ["nodejs-20"]
 
 [nix]
 channel = "stable-24_05"
