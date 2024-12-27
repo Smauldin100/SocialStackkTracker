@@ -1,6 +1,8 @@
 import express from "express";
+import compression from 'compression';
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
+import { apiLimiter } from './middleware/rate-limit';
 import { initializeDatabase } from "@db";
 import { errorHandler } from './middleware/error'; // Added: Assuming this middleware exists
 import { validateEnv } from './config/env';       // Added: Assuming this function exists
@@ -8,6 +10,12 @@ import { validateEnv } from './config/env';       // Added: Assuming this functi
 validateEnv(); // Added:  Validating environment variables
 
 const app = express();
+
+// Add compression
+app.use(compression());
+
+// Add rate limiting
+app.use('/api', apiLimiter);
 
 // Basic middleware setup
 app.use(express.json());
