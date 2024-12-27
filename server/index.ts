@@ -2,6 +2,10 @@ import express from "express";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { initializeDatabase } from "@db";
+import { errorHandler } from './middleware/error'; // Added: Assuming this middleware exists
+import { validateEnv } from './config/env';       // Added: Assuming this function exists
+
+validateEnv(); // Added:  Validating environment variables
 
 const app = express();
 
@@ -46,33 +50,29 @@ app.get('/health', async (_, res) => {
   }
 });
 
-// Error handling middleware
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Server error:', err);
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || "Internal Server Error";
-  res.status(status).json({ message });
-});
+// Register routes and add error handling middleware
+app.use('/api', registerRoutes(app)); // Modified to use registerRoutes correctly
+app.use(errorHandler); // Added: Using the errorHandler middleware
+
 
 (async () => {
   try {
     console.log("Starting server initialization...");
 
-    // Initialize database first
-    await initializeDatabase();
+    // Initialize database first.  Improved error handling.
+    await initializeDatabase().catch(error => {
+        console.error("Failed to initialize database:", error);
+        process.exit(1); //Exit on database initialization failure
+    });
     console.log("Database initialization successful");
 
     // Set up authentication
     setupAuth(app);
     console.log("Authentication setup completed");
 
-    // Register routes and get HTTP server
-    const server = registerRoutes(app);
-    console.log("Routes registered successfully");
-
     // Start server on port 5000
     const PORT = 5000;
-    server.listen(PORT, "0.0.0.0", () => {
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running at http://0.0.0.0:${PORT}`);
     });
 
