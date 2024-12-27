@@ -8,10 +8,20 @@ import { eq, desc, sql } from "drizzle-orm";
 import { setupAuth } from "./auth";
 import { socialMediaRouter } from "./social-media";
 
-// Configure OpenAI with the provided API key
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// Configure OpenAI with proper error handling
+let openai: OpenAI | null = null;
+try {
+  if (process.env.OPENAI_API_KEY) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
+    console.log("OpenAI API initialized successfully");
+  } else {
+    console.warn("OpenAI API key not found. AI features will be disabled.");
+  }
+} catch (error) {
+  console.error("Failed to initialize OpenAI:", error);
+}
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -19,8 +29,30 @@ export function registerRoutes(app: Express): Server {
   // Set up authentication routes
   setupAuth(app);
 
-  // Register social media routes
-  app.use('/api/social', socialMediaRouter);
+  // Register social media routes with error handling
+  app.use('/api/social', (req, res, next) => {
+    // Check for required environment variables
+    const requiredEnvVars = {
+      'Facebook': ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET'],
+      'Instagram': ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'],
+      'TikTok': ['TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET']
+    };
+
+    const missingVars: string[] = [];
+    Object.entries(requiredEnvVars).forEach(([platform, vars]) => {
+      vars.forEach(varName => {
+        if (!process.env[varName]) {
+          missingVars.push(varName);
+        }
+      });
+    });
+
+    if (missingVars.length > 0) {
+      console.warn(`Warning: Missing social media environment variables: ${missingVars.join(', ')}`);
+    }
+
+    next();
+  }, socialMediaRouter);
 
   // Social media endpoints
   app.post("/api/social/posts", async (req, res) => {
@@ -86,6 +118,9 @@ export function registerRoutes(app: Express): Server {
 
   // Enhanced social media snapshot endpoint
   app.get("/api/social/snapshot/:symbol", async (req, res) => {
+    if (!openai) {
+      return res.status(503).json({ error: "AI features are currently unavailable", message: "OpenAI API key is not configured" });
+    }
     try {
       const { symbol } = req.params;
 
@@ -193,13 +228,20 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // AI insights endpoint
+  // AI insights endpoint with graceful degradation
   app.get("/api/ai/insights/:symbol", async (req, res) => {
+    if (!openai) {
+      return res.status(503).json({
+        error: "AI features are currently unavailable",
+        message: "OpenAI API key is not configured"
+      });
+    }
+
     try {
       const { symbol } = req.params;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o", // Using the latest model as specified
+        model: "gpt-4o",
         messages: [
           {
             role: "system",
@@ -225,13 +267,20 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Social media insights endpoint
+  // Social media insights endpoint with graceful degradation
   app.post("/api/social/insights", async (req, res) => {
+    if (!openai) {
+      return res.status(503).json({
+        error: "AI features are currently unavailable",
+        message: "OpenAI API key is not configured"
+      });
+    }
+
     try {
       const { posts } = req.body;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o", // Using the latest model as specified
+        model: "gpt-4o",
         messages: [
           {
             role: "system",

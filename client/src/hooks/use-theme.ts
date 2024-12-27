@@ -15,14 +15,28 @@ export function useTheme() {
 
   useEffect(() => {
     const root = window.document.documentElement;
+    root.classList.remove('theme-transitioning');
+
+    const applyTheme = (newTheme: 'light' | 'dark') => {
+      // Add transitioning class to enable smooth transitions
+      root.classList.add('theme-transitioning');
+
+      // Remove existing theme classes
+      root.classList.remove('light', 'dark');
+
+      // Add new theme class
+      root.classList.add(newTheme);
+
+      // Remove transitioning class after transition completes
+      setTimeout(() => {
+        root.classList.remove('theme-transitioning');
+      }, 200);
+    };
 
     if (theme === 'system') {
-      const systemTheme = getSystemTheme();
-      root.classList.remove('light', 'dark');
-      root.classList.add(systemTheme);
+      applyTheme(getSystemTheme());
     } else {
-      root.classList.remove('light', 'dark');
-      root.classList.add(theme);
+      applyTheme(theme);
     }
 
     localStorage.setItem('theme', theme);
