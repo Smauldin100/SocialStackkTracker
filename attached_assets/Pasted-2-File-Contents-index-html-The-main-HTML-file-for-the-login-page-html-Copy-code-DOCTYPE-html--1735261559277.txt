@@ -1,0 +1,218 @@
+2. File Contents
+index.html
+The main HTML file for the login page:
+
+html
+Copy code
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Media Login</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="login-form">
+            <h1>Welcome Back</h1>
+            <p>Connect with your friends and the world!</p>
+            <form id="loginForm">
+                <input type="email" id="email" placeholder="Email Address" required>
+                <input type="password" id="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+            <div class="social-login">
+                <p>Or login with:</p>
+                <button id="googleLogin">Google</button>
+                <button id="facebookLogin">Facebook</button>
+            </div>
+            <p class="signup">
+                Don't have an account? <a href="#">Sign up</a>
+            </p>
+        </div>
+    </div>
+    <script src="app.js" type="module"></script>
+</body>
+</html>
+styles.css
+The CSS file for styling the login page:
+
+css
+Copy code
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #ff7eb3, #ff758c);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    color: #fff;
+}
+
+.container {
+    width: 100%;
+    max-width: 400px;
+    background: #ffffff;
+    color: #333;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.login-form h1 {
+    margin-bottom: 1rem;
+}
+
+.login-form p {
+    margin-bottom: 2rem;
+    color: #666;
+}
+
+input {
+    width: 100%;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    outline: none;
+    font-size: 1rem;
+}
+
+button {
+    width: 100%;
+    padding: 0.75rem;
+    background: #ff7eb3;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+button:hover {
+    background: #ff4d91;
+}
+
+.social-login {
+    margin-top: 1rem;
+}
+
+.social-login button {
+    width: 48%;
+    margin: 0.5rem 1%;
+    padding: 0.5rem;
+    border-radius: 8px;
+    border: none;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+#googleLogin {
+    background: #db4437;
+    color: white;
+}
+
+#facebookLogin {
+    background: #4267b2;
+    color: white;
+}
+
+.signup a {
+    color: #ff4d91;
+    text-decoration: none;
+}
+app.js
+The JavaScript file for handling functionality:
+
+javascript
+Copy code
+import { Client, Account } from "appwrite";
+
+// Initialize Appwrite
+const client = new Client();
+client
+    .setEndpoint(process.env.APPWRITE_ENDPOINT) // Replace with your Appwrite endpoint
+    .setProject(process.env.APPWRITE_PROJECT_ID); // Replace with your Appwrite project ID
+
+const account = new Account(client);
+
+// Handle Login Form Submission
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+
+    try {
+        await account.createEmailSession(email, password);
+        alert("Login successful!");
+        // Redirect to the home page or dashboard
+        window.location.href = "/home.html";
+    } catch (error) {
+        alert("Login failed: " + error.message);
+    }
+});
+
+// Google Login
+document.getElementById("googleLogin").addEventListener("click", async () => {
+    try {
+        await account.createOAuth2Session("google");
+    } catch (error) {
+        alert("Google Login failed: " + error.message);
+    }
+});
+
+// Facebook Login
+document.getElementById("facebookLogin").addEventListener("click", async () => {
+    try {
+        await account.createOAuth2Session("facebook");
+    } catch (error) {
+        alert("Facebook Login failed: " + error.message);
+    }
+});
+.env
+The file for storing environment variables:
+
+env
+Copy code
+APPWRITE_ENDPOINT=https://your-appwrite-endpoint
+APPWRITE_PROJECT_ID=your-project-id
+package.json
+The package file to manage dependencies:
+
+json
+Copy code
+{
+  "name": "social-media-app",
+  "version": "1.0.0",
+  "description": "A social media app frontend with Appwrite integration.",
+  "main": "app.js",
+  "scripts": {
+    "start": "vite"
+  },
+  "dependencies": {
+    "appwrite": "^9.0.0"
+  },
+  "devDependencies": {
+    "vite": "^3.0.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
+3. Installation
+Install Node.js Dependencies: Run this in the Replit shell:
+
+bash
+Copy code
+npm install
+Start the Development Server: Run the app locally with:
+
+bash
+Copy code
+npm start
