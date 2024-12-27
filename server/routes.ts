@@ -80,6 +80,55 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // New endpoint for social media sentiment snapshot
+  app.get("/api/social/snapshot/:symbol", async (req, res) => {
+    try {
+      const { symbol } = req.params;
+
+      // Fetch recent social media posts mentioning this stock
+      const socialPosts = await db.query.posts.findMany({
+        where: (posts) => {
+          return eq(posts.content, new RegExp(`\\b${symbol}\\b`, 'i'));
+        },
+        orderBy: [desc(posts.createdAt)],
+        limit: 100,
+      });
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `Analyze social media sentiment for stock ${symbol}. Generate a comprehensive snapshot including overall sentiment, confidence level, trending topics, and key insights. Format response as JSON with the structure: {
+              overallSentiment: "positive" | "neutral" | "negative",
+              confidence: number,
+              trendingTopics: string[],
+              keyInsights: string[],
+              volume: number,
+              recentMentions: { platform: string, count: number, sentiment: number }[]
+            }`,
+          },
+          {
+            role: "user",
+            content: `Analyze these social media posts about ${symbol}: ${JSON.stringify(socialPosts)}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      if (!completion.choices[0].message.content) {
+        throw new Error('No content in OpenAI response');
+      }
+
+      const snapshot = JSON.parse(completion.choices[0].message.content);
+      res.json(snapshot);
+    } catch (error) {
+      console.error('Social snapshot generation error:', error);
+      res.status(500).json({ error: "Failed to generate social media snapshot" });
+    }
+  });
+
+
   // WebSocket server for real-time stock updates
   const wss = new WebSocketServer({ 
     server: httpServer,

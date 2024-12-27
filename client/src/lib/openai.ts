@@ -13,6 +13,25 @@ export interface StockAnalysis {
   confidence: number;
 }
 
+export interface SocialMediaInsight {
+  trending: string[];
+  sentiment: number;
+  suggestions: string[];
+}
+
+export interface SocialMediaSnapshot {
+  overallSentiment: 'positive' | 'neutral' | 'negative';
+  confidence: number;
+  trendingTopics: string[];
+  keyInsights: string[];
+  volume: number;
+  recentMentions: {
+    platform: string;
+    count: number;
+    sentiment: number;
+  }[];
+}
+
 export async function analyzeStockData(symbol: string, data: any): Promise<StockAnalysis> {
   try {
     const response = await fetch(`/api/ai/insights/${symbol}`);
@@ -24,12 +43,6 @@ export async function analyzeStockData(symbol: string, data: any): Promise<Stock
     console.error('AI analysis error:', error);
     throw new Error('Failed to analyze stock data');
   }
-}
-
-export interface SocialMediaInsight {
-  trending: string[];
-  sentiment: number;
-  suggestions: string[];
 }
 
 export async function analyzeSocialMedia(posts: any[]): Promise<SocialMediaInsight> {
@@ -50,5 +63,18 @@ export async function analyzeSocialMedia(posts: any[]): Promise<SocialMediaInsig
   } catch (error) {
     console.error('Social media analysis error:', error);
     throw new Error('Failed to analyze social media data');
+  }
+}
+
+export async function generateSocialSnapshot(symbol: string): Promise<SocialMediaSnapshot> {
+  try {
+    const response = await fetch(`/api/social/snapshot/${symbol}`);
+    if (!response.ok) {
+      throw new Error('Failed to generate social media snapshot');
+    }
+    return response.json();
+  } catch (error) {
+    console.error('Social snapshot error:', error);
+    throw new Error('Failed to generate social media snapshot');
   }
 }

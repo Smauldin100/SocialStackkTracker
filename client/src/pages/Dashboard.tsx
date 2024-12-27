@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { StockChart } from '@/components/StockChart';
 import { SocialFeed } from '@/components/SocialFeed';
 import { AIInsights } from '@/components/AIInsights';
+import { SocialSnapshot } from '@/components/SocialSnapshot';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SentimentDashboard } from '@/components/SentimentDashboard';
 import { useUser } from '@/hooks/use-user';
@@ -12,13 +13,13 @@ import { Badge } from '@/components/ui/badge';
 import { Sparkles, TrendingUp, Share2, Bell, Loader2 } from 'lucide-react';
 import { CreatePost } from '@/components/CreatePost';
 import { useToast } from '@/hooks/use-toast';
+import { generateSocialSnapshot } from '@/lib/openai';
 
 export function Dashboard() {
   const [selectedStock, setSelectedStock] = useState('AAPL');
   const { user, logout } = useUser();
   const { toast } = useToast();
 
-  // Stock data query
   const { data: stockData, isLoading: isLoadingStock, error: stockError } = useQuery({
     queryKey: ['/api/stocks', selectedStock],
     queryFn: async () => {
@@ -30,7 +31,6 @@ export function Dashboard() {
     },
   });
 
-  // Social posts query
   const { data: socialPosts, isLoading: isLoadingSocial, error: socialError } = useQuery({
     queryKey: ['/api/social/feed'],
     queryFn: async () => {
@@ -42,7 +42,6 @@ export function Dashboard() {
     },
   });
 
-  // Sentiment data query with proper error handling
   const { data: sentimentData, isLoading: isLoadingSentiment, error: sentimentError } = useQuery({
     queryKey: ['/api/social/insights'],
     queryFn: async () => {
@@ -60,7 +59,6 @@ export function Dashboard() {
     enabled: !!socialPosts,
   });
 
-  // AI insights query
   const { data: aiInsights, isLoading: isLoadingAI, error: aiError } = useQuery({
     queryKey: ['/api/ai/insights', selectedStock],
     queryFn: async () => {
@@ -74,7 +72,6 @@ export function Dashboard() {
     enabled: !!stockData,
   });
 
-  // Error handling effect
   useEffect(() => {
     const errors = [
       { error: stockError, message: 'Failed to load stock data' },
@@ -120,6 +117,28 @@ export function Dashboard() {
       status: "Planned"
     }
   ];
+
+  const { mutateAsync: generateSnapshot, isLoading: isGeneratingSnapshot, error: snapshotError } = useMutation({
+    mutationFn: generateSocialSnapshot,
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to generate social media snapshot',
+      });
+    },
+  });
+
+  const [socialSnapshot, setSocialSnapshot] = useState(null);
+
+  const handleGenerateSnapshot = async () => {
+    try {
+      const snapshot = await generateSnapshot(selectedStock);
+      setSocialSnapshot(snapshot);
+    } catch (error) {
+      console.error('Failed to generate snapshot:', error);
+    }
+  };
 
   if (!user) {
     return (
@@ -174,6 +193,14 @@ export function Dashboard() {
                 confidence: 0,
               }}
               isLoading={isLoadingAI}
+            />
+
+            <SocialSnapshot
+              symbol={selectedStock}
+              onGenerate={handleGenerateSnapshot}
+              snapshot={socialSnapshot}
+              isLoading={isGeneratingSnapshot}
+              error={snapshotError}
             />
 
             <SentimentDashboard
