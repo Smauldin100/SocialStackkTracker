@@ -8,7 +8,7 @@ channel = "stable-24_05"
 
 [deployment]
 deploymentTarget = "cloudrun"
-build = ["npm", "ci", "npm", "run", "build"]
+build = ["sh", "-c", "npm ci && npm run build"]
 run = ["npm", "start"]
 ignorePorts = false
 
